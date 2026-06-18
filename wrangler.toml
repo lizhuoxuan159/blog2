@@ -1,0 +1,13 @@
+name = "blog-api"
+main = "index.js"
+compatibility_date = "2026-01-01"
+
+# 仅保留D1数据库，完全移除R2 buckets配置
+[[d1_databases]]
+binding = "DB"
+database_name = "blog-db"
+database_id = "351b86ec-887e-4d0c-b555-7578497be62d"
+
+# JWT密钥在Cloudflare后台环境变量填写，不要硬编码
+[vars]
+JWT_SECRET = "dfhjvsndhvjhdzcjkfkgrbcuyerwivn3487vch8wa9cfn872833339c378cn8x90jm89c7nm2965nc7642905v7y3495v5v5v889v6890689v6890jv98046jvdfv65bv36"
