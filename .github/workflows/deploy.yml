@@ -1,35 +1,39 @@
-name: Deploy All
+name: Deploy Blog System
 on:
   push:
     branches: [main]
+
 jobs:
-  # 部署前台Pages
-  deploy-frontend:
+  # 1. 部署前台 Pages
+  build-frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - name: Build Frontend
+        with:
+          node-version: 20
+      - name: Install & Build
         run: |
           cd frontend
-          npm i && npm run build
-      - name: Pages Deploy
+          npm install
+          npm run build
+      - name: Publish Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          projectName: blog-site
+          projectName: 你的pages项目名
           directory: frontend/dist
 
-  # 部署Worker后端
+  # 2. 部署 Worker API（修复后的正确写法）
   deploy-worker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - name: Deploy Worker API
+        with:
+          node-version: 20
+      - name: Deploy Worker
         working-directory: ./worker
         run: npx wrangler deploy
         env:
