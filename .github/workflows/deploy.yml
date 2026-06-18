@@ -1,24 +1,37 @@
-name: Deploy Blog To Cloudflare Pages
+name: Deploy All
 on:
   push:
     branches: [main]
 jobs:
-  build-deploy:
+  # 部署前台Pages
+  deploy-frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Install & Build Frontend
+        with: { node-version: 20 }
+      - name: Build Frontend
         run: |
           cd frontend
-          npm install
-          npm run build
-      - name: Deploy Pages
+          npm i && npm run build
+      - name: Pages Deploy
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          projectName: my-blog
+          projectName: blog-site
           directory: frontend/dist
+
+  # 部署Worker后端
+  deploy-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Deploy Worker API
+        working-directory: ./worker
+        run: npx wrangler deploy
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
