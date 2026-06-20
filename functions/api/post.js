@@ -1,4 +1,4 @@
-// ´ÓCookie»ñÈ¡µÇÂ¼ÓÃ»§ID
+ï»¿// ä»Cookieè·å–ç™»å½•ç”¨æˆ·ID
 async function getLoginUid(request) {
   const cookieHeader = request.headers.get('Cookie') || '';
   const match = cookieHeader.match(/blog_session=([^;]+)/);
@@ -17,7 +17,7 @@ export async function onRequest({ request, env }) {
   const url = new URL(request.url);
   const action = url.searchParams.get('action');
 
-  // »ñÈ¡ËùÓĞÎÄÕÂ£¨ÎŞĞèµÇÂ¼£©
+  // è·å–æ‰€æœ‰æ–‡ç« ï¼ˆæ— éœ€ç™»å½•ï¼‰
   if (request.method === 'GET' && action === 'list') {
     const list = await db.prepare(`
       SELECT p.id, p.title, p.content, p.created_at, u.username
@@ -29,7 +29,7 @@ export async function onRequest({ request, env }) {
     });
   }
 
-  // µ¥ÆªÎÄÕÂ£¨ÎŞĞèµÇÂ¼£©
+  // å•ç¯‡æ–‡ç« ï¼ˆæ— éœ€ç™»å½•ï¼‰
   if (request.method === 'GET' && action === 'detail') {
     const id = url.searchParams.get('id');
     const row = await db.prepare(`
@@ -41,11 +41,11 @@ export async function onRequest({ request, env }) {
     });
   }
 
-  // ĞÂ½¨ÎÄÕÂ£º±ØĞëµÇÂ¼
+  // æ–°å»ºæ–‡ç« ï¼šå¿…é¡»ç™»å½•
   if (request.method === 'POST' && action === 'create') {
     const uid = await getLoginUid(request);
     if (!uid) {
-      return new Response(JSON.stringify({ code: 99, msg:'ÇëÏÈµÇÂ¼' }), {
+      return new Response(JSON.stringify({ code: 99, msg:'è¯·å…ˆç™»å½•' }), {
         status:401,
         headers: { 'Content-Type': 'application/json; charset=utf-8' }
       });
@@ -53,7 +53,7 @@ export async function onRequest({ request, env }) {
     const { title, content } = await request.json();
     await db.prepare(`INSERT INTO posts (title, content, author_id) VALUES (?, ?, ?)`)
       .bind(title, content, uid).run();
-    return new Response(JSON.stringify({ code: 0, msg: '·¢²¼³É¹¦' }), {
+    return new Response(JSON.stringify({ code: 0, msg: 'å‘å¸ƒæˆåŠŸ' }), {
       headers: { 'Content-Type': 'application/json; charset=utf-8' }
     });
   }

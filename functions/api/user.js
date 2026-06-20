@@ -1,4 +1,4 @@
-async function sha256(rawStr) {
+ï»¿async function sha256(rawStr) {
   const encoder = new TextEncoder();
   const data = encoder.encode(rawStr);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -6,12 +6,12 @@ async function sha256(rawStr) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Éú³É¼òÒ×µÇÂ¼Æ¾Ö¤
+// ç”Ÿæˆç®€æ˜“ç™»å½•å‡­è¯
 function createSessionToken(uid, username) {
   const payload = {
     uid,
     username,
-    exp: Date.now() + 86400000 // 1Ìì¹ıÆÚ
+    exp: Date.now() + 86400000 // 1å¤©è¿‡æœŸ
   };
   return btoa(JSON.stringify(payload));
 }
@@ -21,9 +21,9 @@ export async function onRequest({ request, env }) {
   const url = new URL(request.url);
   const action = url.searchParams.get('action');
 
-  // ÍË³öµÇÂ¼£ºÇå³ıCookie
+  // é€€å‡ºç™»å½•ï¼šæ¸…é™¤Cookie
   if (action === 'logout' && request.method === 'POST') {
-    return new Response(JSON.stringify({ code:0, msg:'ÒÑÍË³öµÇÂ¼' }), {
+    return new Response(JSON.stringify({ code:0, msg:'å·²é€€å‡ºç™»å½•' }), {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
         'Set-Cookie': 'blog_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure'
@@ -31,7 +31,7 @@ export async function onRequest({ request, env }) {
     });
   }
 
-  // »ñÈ¡µ±Ç°µÇÂ¼×´Ì¬
+  // è·å–å½“å‰ç™»å½•çŠ¶æ€
   if (action === 'check' && request.method === 'GET') {
     const cookieHeader = request.headers.get('Cookie') || '';
     const match = cookieHeader.match(/blog_session=([^;]+)/);
@@ -42,7 +42,7 @@ export async function onRequest({ request, env }) {
     }
     try {
       const payload = JSON.parse(atob(match[1]));
-      // ÅĞ¶ÏÊÇ·ñ¹ıÆÚ
+      // åˆ¤æ–­æ˜¯å¦è¿‡æœŸ
       if (Date.now() > payload.exp) {
         return new Response(JSON.stringify({ login:false }), {
           headers: {
@@ -68,36 +68,36 @@ export async function onRequest({ request, env }) {
     const { username, password } = body;
     const hashPwd = await sha256(password);
 
-    // ×¢²á
+    // æ³¨å†Œ
     if (action === 'register') {
       try {
         await db.prepare(`INSERT INTO users (username, password) VALUES (?, ?)`)
           .bind(username, hashPwd).run();
-        return new Response(JSON.stringify({ code: 0, msg: '×¢²á³É¹¦' }), {
+        return new Response(JSON.stringify({ code: 0, msg: 'æ³¨å†ŒæˆåŠŸ' }), {
           headers: { 'Content-Type': 'application/json; charset=utf-8' }
         });
       } catch (e) {
-        return new Response(JSON.stringify({ code: 1, msg: 'ÓÃ»§ÃûÒÑ´æÔÚ' }), {
+        return new Response(JSON.stringify({ code: 1, msg: 'ç”¨æˆ·åå·²å­˜åœ¨' }), {
           headers: { 'Content-Type': 'application/json; charset=utf-8' }
         });
       }
     }
 
-    // µÇÂ¼£ºÉèÖÃHttpOnly Cookie
+    // ç™»å½•ï¼šè®¾ç½®HttpOnly Cookie
     if (action === 'login') {
       const res = await db.prepare(`SELECT id, username FROM users WHERE username = ? AND password = ?`)
         .bind(username, hashPwd).first();
       if (res) {
         const sessionToken = createSessionToken(res.id, res.username);
-        return new Response(JSON.stringify({ code: 0, msg:'µÇÂ¼³É¹¦' }), {
+        return new Response(JSON.stringify({ code: 0, msg:'ç™»å½•æˆåŠŸ' }), {
           headers: {
             'Content-Type': 'application/json; charset=utf-8',
-            // HttpOnly Ç°¶ËJSÎŞ·¨¶ÁÈ¡£¬·ÀXSS
+            // HttpOnly å‰ç«¯JSæ— æ³•è¯»å–ï¼Œé˜²XSS
             'Set-Cookie': `blog_session=${sessionToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax; Secure`
           }
         });
       } else {
-        return new Response(JSON.stringify({ code: 1, msg: 'ÕËºÅÃÜÂë´íÎó' }), {
+        return new Response(JSON.stringify({ code: 1, msg: 'è´¦å·å¯†ç é”™è¯¯' }), {
           headers: { 'Content-Type': 'application/json; charset=utf-8' }
         });
       }
