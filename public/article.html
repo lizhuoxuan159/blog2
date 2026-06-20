@@ -90,8 +90,7 @@ async function loadDetail(){
   const res = await fetch(`/api/post?action=detail&id=${postId}`);
   const data = await res.json();
   if(!data){
-    alert('文章不存在');
-    location.href='/index.html';
+    location.href = "/error.html?code=404&msg=页面找不到";
     return;
   }
   postAuthorId = data.author_id;
