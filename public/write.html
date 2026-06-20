@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>发布文章</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="container">
+  <nav>
+    <a href="/index.html"><button class="glass-btn">返回首页</button></a>
+  </nav>
+  <div class="glass">
+    <h2>撰写新文章</h2>
+    <input type="text" id="title" placeholder="文章标题">
+    <textarea id="content" rows="8" placeholder="文章内容"></textarea>
+    <button class="glass-btn" onclick="publish()">发布</button>
+  </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+if(!token){
+  alert('请先登录');
+  location.href='/login.html';
+}
+function getUid(){
+  const obj = JSON.parse(atob(token));
+  return obj.uid;
+}
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+async function publish(){
+  const title = document.getElementById('title').value.trim();
+  const content = document.getElementById('content').value.trim();
+  if(!title||!content) return alert('标题内容不能为空');
+  const res = await fetch('/api/post?action=create',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({title,content,uid:getUid()})
+  });
+  const data = await res.json();
+  if(data.code===0){
+    alert('发布成功');
+    location.href='/index.html';
+  }
+}
+</script>
+</body>
+</html>
