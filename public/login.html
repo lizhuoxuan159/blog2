@@ -31,11 +31,15 @@ async function login(){
     body:JSON.stringify({username:u,password:p})
   });
   const data = await res.json();
-  if(data.code===0){
-    alert('登录成功');
-    location.href='/index.html';
+ if(data.code === 0){
+  alert('登录成功');
+  // 获取跳转来源地址
+  const urlParams = new URLSearchParams(location.search);
+  const target = urlParams.get('redirect');
+  if(target){
+    location.href = decodeURIComponent(target);
   }else{
-    alert(data.msg);
+    location.href = '/index.html';
   }
 }
 </script>

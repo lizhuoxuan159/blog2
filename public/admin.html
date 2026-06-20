@@ -29,6 +29,18 @@
   </div>
 </div>
 <script>
+// 页面加载立即执行登录校验
+(async function checkAuthRedirect() {
+  const res = await fetch('/api/user?action=check');
+  const data = await res.json();
+  // 未登录 / 账号注销 / 账号封禁 → 跳转登录
+  if (!data.login) {
+    // 记录当前页面地址，登录成功后自动跳回来
+    const currentUrl = location.href;
+    location.href = `/login.html?redirect=${encodeURIComponent(currentUrl)}`;
+    return;
+  }
+})();
 async function checkAuth(){
   const res = await fetch('/api/user?action=check');
   const data = await res.json();
