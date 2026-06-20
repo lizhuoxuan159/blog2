@@ -1,10 +1,10 @@
 ﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>登录</title>
-  <link rel="stylesheet" href="/css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录</title>
+<link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 <div class="container">
@@ -15,31 +15,50 @@
     <h2>用户登录</h2>
     <input type="text" id="username" placeholder="用户名">
     <input type="password" id="password" placeholder="密码">
-    <button class="glass-btn" style="width:100%" onclick="login()">登录</button>
+    <!-- 关键：type="button" 避免表单默认提交刷新阻塞点击 -->
+    <button class="glass-btn" style="width:100%" onclick="doLogin()">登录</button>
     <p style="margin-top:12px;text-align:center">没有账号？<a href="/register.html">去注册</a></p>
   </div>
 </div>
 
 <script>
-async function login(){
-  const u = document.getElementById('username').value.trim();
-  const p = document.getElementById('password').value.trim();
-  if(!u||!p) return alert('填写完整');
-  const res = await fetch('/api/user?action=login',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({username:u,password:p})
-  });
-  const data = await res.json();
- if(data.code === 0){
-  alert('登录成功');
-  // 获取跳转来源地址
-  const urlParams = new URLSearchParams(location.search);
-  const target = urlParams.get('redirect');
-  if(target){
-    location.href = decodeURIComponent(target);
-  }else{
-    location.href = '/index.html';
+// 封装登录函数，全局捕获异常，防止点击静默失效
+async function doLogin() {
+  console.log('登录按钮被点击'); // 调试用，打开控制台可看是否触发点击
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+
+  if (!username || !password) {
+    alert('请填写用户名和密码');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/user?action=login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await res.json();
+    if (data.code === 0) {
+      alert('登录成功');
+      // 登录成功跳转回未登录前原本要访问的页面
+      const urlParams = new URLSearchParams(location.search);
+      const redirectUrl = urlParams.get('redirect');
+      if (redirectUrl) {
+        location.href = decodeURIComponent(redirectUrl);
+      } else {
+        location.href = '/index.html';
+      }
+    } else {
+      alert(data.msg);
+    }
+  } catch (err) {
+    alert('接口请求异常，请检查网络或部署状态');
+    console.error('登录报错详情：', err);
   }
 }
 </script>
