@@ -20,19 +20,24 @@
 </div>
 
 <script>
-const token = localStorage.getItem('token');
-if(!token){
-  alert('请先登录');
-  location.href='/login.html';
+let loginUid = null;
+
+async function checkLogin() {
+  const res = await fetch('/api/user?action=check');
+  const data = await res.json();
+  if(!data.login){
+    alert('请先登录');
+    location.href='/login.html';
+    return;
+  }
+  loginUid = data.uid;
 }
-function getUid(){
-  const obj = JSON.parse(atob(token));
-  return obj.uid;
-}
+
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
 async function publish(){
   const title = document.getElementById('title').value.trim();
   const content = document.getElementById('content').value.trim();
@@ -40,14 +45,18 @@ async function publish(){
   const res = await fetch('/api/post?action=create',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({title,content,uid:getUid()})
+    body:JSON.stringify({title,content})
   });
   const data = await res.json();
   if(data.code===0){
     alert('发布成功');
     location.href='/index.html';
+  }else{
+    alert(data.msg);
   }
 }
+
+checkLogin();
 </script>
 </body>
 </html>

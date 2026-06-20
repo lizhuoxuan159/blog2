@@ -32,7 +32,6 @@ async function login(){
   });
   const data = await res.json();
   if(data.code===0){
-    localStorage.setItem('token',data.token);
     alert('登录成功');
     location.href='/index.html';
   }else{
