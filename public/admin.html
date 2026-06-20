@@ -11,13 +11,24 @@
   <nav>
     <a href="/index.html"><button class="glass-btn">返回首页</button></a>
   </nav>
+  <div class="glass" style="margin-bottom:20px">
+    <h3>手动创建新用户</h3>
+    <input type="text" id="newUser" placeholder="用户名">
+    <input type="password" id="newPwd" placeholder="初始密码">
+    <select id="newRole">
+      <option value="guest">访客 guest</option>
+      <option value="writer">作家 writer</option>
+      <option value="admin">管理员 admin</option>
+      <option value="banned">封禁 banned</option>
+    </select>
+    <button class="glass-btn" onclick="adminCreateUser()">创建用户</button>
+  </div>
   <div class="glass">
-    <h2>用户权限管理面板</h2>
+    <h2>全部用户列表</h2>
     <div id="userListWrap"></div>
   </div>
 </div>
 <script>
-// 权限校验，非管理员跳转首页
 async function checkAuth(){
   const res = await fetch('/api/user?action=check');
   const data = await res.json();
@@ -29,6 +40,21 @@ async function checkAuth(){
   loadUserList();
 }
 
+async function adminCreateUser(){
+  const username = document.getElementById('newUser').value.trim();
+  const pwd = document.getElementById('newPwd').value.trim();
+  const role = document.getElementById('newRole').value;
+  if(!username||!pwd) return alert('用户名密码不能为空');
+  const res = await fetch('/api/user?action=adminAddUser',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username,password:pwd,role})
+  })
+  const ret = await res.json();
+  alert(ret.msg);
+  loadUserList();
+}
+
 async function loadUserList(){
   const res = await fetch('/api/user?action=userList');
   const data = await res.json();
@@ -36,7 +62,7 @@ async function loadUserList(){
   const wrap = document.getElementById('userListWrap');
   wrap.innerHTML = data.list.map(u=>`
   <div style="margin:10px 0;padding:10px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;display:flex;align-items:center;gap:15px;flex-wrap:wrap">
-    <span>ID:${u.id} | 用户名:${escapeHtml(u.username)} | 当前角色:${u.role}</span>
+    <span>ID:${u.id} | 用户名:${escapeHtml(u.username)} | 角色:${u.role} | ${u.is_cancel==1?'【已注销】':'正常账号'}</span>
     <select id="role_${u.id}">
       <option value="guest">访客 guest</option>
       <option value="writer">作家 writer</option>
@@ -47,7 +73,6 @@ async function loadUserList(){
     <button class="glass-btn" style="background:rgba(255,80,80,0.25)" onclick="delUser(${u.id},'${escapeHtml(u.username)}')">删除用户</button>
   </div>
   `).join('');
-  // 回填现有角色
   data.list.forEach(u=>{
     document.getElementById(`role_${u.id}`).value = u.role;
   })
@@ -65,11 +90,8 @@ async function saveRole(uid){
   loadUserList();
 }
 
-// 删除用户函数
 async function delUser(uid, uname){
-  if(!confirm(`确定要删除用户【${uname}】吗？该用户所有文章也会被一并删除，操作不可恢复！`)){
-    return;
-  }
+  if(!confirm(`确定删除用户【${uname}】？该用户所有文章保留，作者显示账户已注销，不可恢复！`)) return;
   const res = await fetch('/api/user?action=deleteUser',{
     method:'POST',
     headers:{'Content-Type':'application/json'},

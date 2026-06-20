@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人中心</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="container">
+  <nav>
+    <a href="/index.html"><button class="glass-btn">返回首页</button></a>
+  </nav>
+  <div class="glass" style="max-width:500px;margin:0 auto">
+    <h2>个人设置</h2>
+    <hr>
+    <h3>修改密码</h3>
+    <input type="password" id="oldPwd" placeholder="当前密码">
+    <input type="password" id="newPwd" placeholder="新密码">
+    <button class="glass-btn" onclick="changePassword()">确认修改密码</button>
+    <hr style="margin:25px 0">
+    <h3>注销当前账户</h3>
+    <p style="opacity:0.8">注销后账号无法登录，过往文章作者会显示「账户已注销」，操作不可逆</p>
+    <input type="password" id="cancelPwd" placeholder="输入密码确认注销">
+    <button class="glass-btn" style="background:rgba(255,70,70,0.2)" onclick="cancelMyAccount()">永久注销账号</button>
+  </div>
+</div>
+<script>
+// 未登录跳转
+(async function checkLogin(){
+  const res = await fetch('/api/user?action=check');
+  const data = await res.json();
+  if(!data.login){
+    alert('请先登录');
+    location.href='/login.html';
+  }
+})();
+
+async function changePassword(){
+  const old = document.getElementById('oldPwd').value.trim();
+  const newP = document.getElementById('newPwd').value.trim();
+  if(!old||!newP) return alert('密码不能为空');
+  const res = await fetch('/api/user?action=changePwd',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({oldPwd:old,newPwd:newP})
+  })
+  const ret = await res.json();
+  alert(ret.msg);
+  if(ret.code===0) location.href='/login.html';
+}
+
+async function cancelMyAccount(){
+  const pwd = document.getElementById('cancelPwd').value.trim();
+  if(!pwd) return alert('请输入密码');
+  if(!confirm('确认永久注销账号？该操作不可撤回！')) return;
+  const res = await fetch('/api/user?action=cancelAccount',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({password:pwd})
+  })
+  const ret = await res.json();
+  alert(ret.msg);
+  location.href='/index.html';
+}
+</script>
+</body>
+</html>

@@ -25,30 +25,44 @@ export async function onRequest({ request, env }) {
     const action = url.searchParams.get('action');
     const loginUser = await getLoginUser(request);
 
-    // 文章列表 所有人可查看
+    // 文章列表，自动判断注销状态
     if (request.method === 'GET' && action === 'list') {
-      const list = await db.prepare(`
-        SELECT p.id, p.title, p.content, p.created_at, u.username, u.role
+      const rawList = await db.prepare(`
+        SELECT p.id, p.title, p.content, p.created_at, u.username, u.role, u.is_cancel
         FROM posts p LEFT JOIN users u ON p.author_id = u.id
         ORDER BY p.created_at DESC
       `).all();
-      return jsonResp(list.results);
+      const list = rawList.results.map(item=>{
+        let displayName = item.username;
+        // 用户被删除 / 主动注销，统一显示账户已注销
+        if(item.is_cancel === 1 || item.username === null){
+          displayName = "账户已注销";
+        }
+        return {
+          ...item,
+          authorName: displayName
+        }
+      })
+      return jsonResp(list);
     }
 
-    // 文章详情 所有人可查看
+    // 文章详情
     if (request.method === 'GET' && action === 'detail') {
       const id = url.searchParams.get('id');
       const row = await db.prepare(`
-        SELECT p.*, u.username FROM posts p
+        SELECT p.*, u.username, u.is_cancel FROM posts p
         LEFT JOIN users u ON p.author_id = u.id WHERE p.id = ?
       `).bind(id).first();
-      return jsonResp(row);
+      let displayAuthor = row?.username;
+      if(row?.is_cancel === 1 || displayAuthor === null){
+        displayAuthor = "账户已注销";
+      }
+      return jsonResp({...row, displayAuthor});
     }
 
     // 新建文章权限控制
     if (request.method === 'POST' && action === 'create') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
-      // 访客、封禁用户禁止发文
       const allowPostRole = ['admin','writer'];
       if (!allowPostRole.includes(loginUser.role)) {
         return jsonResp({ code:98, msg:'当前身份不能发布文章' }, 403);
@@ -59,14 +73,13 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code:0, msg:'发布成功' });
     }
 
-    // 删除文章权限：管理员删全部，作家只能删自己的
+    // 删除文章权限
     if (request.method === 'POST' && action === 'delete') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const { postId } = await request.json();
       const postInfo = await db.prepare(`SELECT author_id FROM posts WHERE id = ?`).bind(postId).first();
       if (!postInfo) return jsonResp({ code:1, msg:'文章不存在' });
 
-      // 管理员直接放行；非管理员必须是文章作者
       if (loginUser.role !== 'admin' && postInfo.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权删除他人文章' }, 403);
       }
