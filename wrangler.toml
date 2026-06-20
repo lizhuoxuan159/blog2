@@ -1,0 +1,7 @@
+name = "blog2"
+compatibility_date = "2025-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "blog-db"
+database_id = "351b86ec-887e-4d0c-b555-7578497be62d"
