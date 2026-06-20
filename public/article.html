@@ -8,28 +8,75 @@
 </head>
 <body>
 <div class="container">
-  <nav>
+  <div style="text-align:center;margin:20px 0">
     <a href="/index.html"><button class="glass-btn">返回首页</button></a>
-  </nav>
-  <div class="glass" id="articleBox"></div>
+    <button id="delPostBtn" class="glass-btn" style="background:rgba(255,80,80,0.25);margin-left:10px;display:none" onclick="deleteArticle()">删除此文</button>
+  </div>
+  <div class="glass" style="max-width:600px;margin:0 auto">
+    <h2 id="postTitle"></h2>
+    <p id="postInfo" style="opacity:0.8;margin:8px 0"></p>
+    <hr>
+    <div id="postContent"></div>
+  </div>
 </div>
 
 <script>
+let postId = new URLSearchParams(location.search).get('id');
+let currentLoginUid = null;
+let currentLoginRole = null;
+let postAuthorId = null;
+
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-async function loadDetail(){
-  const id = new URLSearchParams(location.search).get('id');
-  const res = await fetch(`/api/post?action=detail&id=${id}`);
-  const p = await res.json();
-  document.getElementById('articleBox').innerHTML = `
-    <h1>${escapeHtml(p.title)}</h1>
-    <p style="opacity:0.7;margin:10px 0">作者：${escapeHtml(p.username)} | ${p.created_at}</p>
-    <hr>
-    <p style="white-space:pre-line;line-height:1.7">${escapeHtml(p.content)}</p>
-  `;
+
+// 检查登录状态
+async function checkLoginState(){
+  const res = await fetch('/api/user?action=check');
+  const data = await res.json();
+  if(data.login){
+    currentLoginUid = data.uid;
+    currentLoginRole = data.role;
+  }
 }
+
+// 加载文章详情
+async function loadDetail(){
+  const res = await fetch(`/api/post?action=detail&id=${postId}`);
+  const data = await res.json();
+  if(!data){
+    alert('文章不存在');
+    location.href='/index.html';
+    return;
+  }
+  postAuthorId = data.author_id;
+  let authorName = data.displayAuthor;
+  document.getElementById('postTitle').innerText = data.title;
+  document.getElementById('postInfo').innerText = `作者：${authorName} | ${data.created_at}`;
+  document.getElementById('postContent').innerText = data.content;
+
+  // 判断是否有权限显示删除按钮：管理员 或 文章本人
+  await checkLoginState();
+  const delBtn = document.getElementById('delPostBtn');
+  if(currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId)){
+    delBtn.style.display = 'inline-block';
+  }
+}
+
+// 删除文章函数
+async function deleteArticle(){
+  if(!confirm('确定删除这篇文章？删除后不可恢复！')) return;
+  const res = await fetch('/api/post?action=delete',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({postId:postId})
+  });
+  const ret = await res.json();
+  alert(ret.msg);
+  location.href='/index.html';
+}
+
 loadDetail();
 </script>
 </body>
