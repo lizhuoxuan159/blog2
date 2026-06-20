@@ -1,37 +1,37 @@
-<!DOCTYPE html>
+ï»¿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>¸öÈËÖĞĞÄ</title>
+<title>ä¸ªäººä¸­å¿ƒ</title>
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 <div class="container">
   <nav>
-    <a href="/index.html"><button class="glass-btn">·µ»ØÊ×Ò³</button></a>
+    <a href="/index.html"><button class="glass-btn">è¿”å›é¦–é¡µ</button></a>
   </nav>
   <div class="glass" style="max-width:500px;margin:0 auto">
-    <h2>¸öÈËÉèÖÃ</h2>
+    <h2>ä¸ªäººè®¾ç½®</h2>
     <hr>
-    <h3>ĞŞ¸ÄÃÜÂë</h3>
-    <input type="password" id="oldPwd" placeholder="µ±Ç°ÃÜÂë">
-    <input type="password" id="newPwd" placeholder="ĞÂÃÜÂë">
-    <button class="glass-btn" onclick="changePassword()">È·ÈÏĞŞ¸ÄÃÜÂë</button>
+    <h3>ä¿®æ”¹å¯†ç </h3>
+    <input type="password" id="oldPwd" placeholder="å½“å‰å¯†ç ">
+    <input type="password" id="newPwd" placeholder="æ–°å¯†ç ">
+    <button class="glass-btn" onclick="changePassword()">ç¡®è®¤ä¿®æ”¹å¯†ç </button>
     <hr style="margin:25px 0">
-    <h3>×¢Ïúµ±Ç°ÕË»§</h3>
-    <p style="opacity:0.8">×¢ÏúºóÕËºÅÎŞ·¨µÇÂ¼£¬¹ıÍùÎÄÕÂ×÷Õß»áÏÔÊ¾¡¸ÕË»§ÒÑ×¢Ïú¡¹£¬²Ù×÷²»¿ÉÄæ</p>
-    <input type="password" id="cancelPwd" placeholder="ÊäÈëÃÜÂëÈ·ÈÏ×¢Ïú">
-    <button class="glass-btn" style="background:rgba(255,70,70,0.2)" onclick="cancelMyAccount()">ÓÀ¾Ã×¢ÏúÕËºÅ</button>
+    <h3>æ³¨é”€å½“å‰è´¦æˆ·</h3>
+    <p style="opacity:0.8">æ³¨é”€åè´¦å·æ— æ³•ç™»å½•ï¼Œè¿‡å¾€æ–‡ç« ä½œè€…ä¼šæ˜¾ç¤ºã€Œè´¦æˆ·å·²æ³¨é”€ã€ï¼Œæ“ä½œä¸å¯é€†</p>
+    <input type="password" id="cancelPwd" placeholder="è¾“å…¥å¯†ç ç¡®è®¤æ³¨é”€">
+    <button class="glass-btn" style="background:rgba(255,70,70,0.2)" onclick="cancelMyAccount()">æ°¸ä¹…æ³¨é”€è´¦å·</button>
   </div>
 </div>
 <script>
-// Î´µÇÂ¼Ìø×ª
+// æœªç™»å½•è·³è½¬
 (async function checkLogin(){
   const res = await fetch('/api/user?action=check');
   const data = await res.json();
   if(!data.login){
-    alert('ÇëÏÈµÇÂ¼');
+    alert('è¯·å…ˆç™»å½•');
     location.href='/login.html';
   }
 })();
@@ -39,7 +39,7 @@
 async function changePassword(){
   const old = document.getElementById('oldPwd').value.trim();
   const newP = document.getElementById('newPwd').value.trim();
-  if(!old||!newP) return alert('ÃÜÂë²»ÄÜÎª¿Õ');
+  if(!old||!newP) return alert('å¯†ç ä¸èƒ½ä¸ºç©º');
   const res = await fetch('/api/user?action=changePwd',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -52,8 +52,8 @@ async function changePassword(){
 
 async function cancelMyAccount(){
   const pwd = document.getElementById('cancelPwd').value.trim();
-  if(!pwd) return alert('ÇëÊäÈëÃÜÂë');
-  if(!confirm('È·ÈÏÓÀ¾Ã×¢ÏúÕËºÅ£¿¸Ã²Ù×÷²»¿É³·»Ø£¡')) return;
+  if(!pwd) return alert('è¯·è¾“å…¥å¯†ç ');
+  if(!confirm('ç¡®è®¤æ°¸ä¹…æ³¨é”€è´¦å·ï¼Ÿè¯¥æ“ä½œä¸å¯æ’¤å›ï¼')) return;
   const res = await fetch('/api/user?action=cancelAccount',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
