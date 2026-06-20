@@ -1,0 +1,87 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>页面出错了</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+body{
+  display:flex;
+  min-height:100vh;
+  margin:0;
+  align-items:center;
+  justify-content:center;
+  background: linear-gradient(135deg,#5578e8,#9255dd);
+  color:#fff;
+  font-family:system-ui;
+  text-align:center;
+}
+.error-box{
+  padding:40px 30px;
+  border-radius:16px;
+  background:rgba(255,255,255,0.12);
+  border:1px solid rgba(255,255,255,0.2);
+}
+.code{
+  font-size:72px;
+  font-weight:bold;
+  margin:0;
+  opacity:0.9;
+}
+.desc{
+  font-size:18px;
+  margin:8px 0 25px;
+  opacity:0.85;
+}
+.back-btn{
+  padding:10px 24px;
+  border:none;
+  border-radius:8px;
+  background:rgba(255,255,255,0.2);
+  color:#fff;
+  font-size:16px;
+  cursor:pointer;
+}
+.back-btn:hover{
+  background:rgba(255,255,255,0.3);
+}
+</style>
+</head>
+<body>
+<div class="error-box">
+  <p class="code" id="errCode">404</p>
+  <p class="desc" id="errText">您访问的页面不存在</p>
+  <button class="back-btn" onclick="goHome()">返回网站首页</button>
+</div>
+
+<script>
+// 获取跳转参数，区分不同错误类型
+const params = new URLSearchParams(location.search);
+const code = params.get('code');
+const msg = params.get('msg');
+
+const errCodeDom = document.getElementById('errCode');
+const errTextDom = document.getElementById('errText');
+
+if(code === '403'){
+  errCodeDom.innerText = '403';
+  errTextDom.innerText = msg || '权限不足，禁止访问';
+}else if(code === '404'){
+  errCodeDom.innerText = '404';
+  errTextDom.innerText = msg || '您访问的页面不存在';
+}else if(code === '500'){
+  errCodeDom.innerText = '500';
+  errTextDom.innerText = msg || '服务器内部错误';
+}else if(code){
+  errCodeDom.innerText = code;
+  errTextDom.innerText = msg || '访问异常';
+}
+
+// 返回首页
+function goHome(){
+  location.href = '/index.html';
+}
+</script>
+</body>
+</html>
