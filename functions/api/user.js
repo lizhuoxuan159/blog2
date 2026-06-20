@@ -135,6 +135,23 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code:0, list: allUsers.results });
     }
 
+    // ============ 新增：管理员删除用户接口 ============
+    if (action === 'deleteUser' && request.method === 'POST') {
+      if (!loginUser || loginUser.role !== 'admin') {
+        return jsonResp({ code:99, msg:'无权操作，仅管理员可用' }, 403);
+      }
+      const { targetUid } = await request.json();
+      // 禁止删除自己账号
+      if (Number(targetUid) === loginUser.uid) {
+        return jsonResp({ code:1, msg:'不能删除当前登录管理员账号' });
+      }
+      // 级联删除该用户所有文章
+      await db.prepare(`DELETE FROM posts WHERE author_id = ?`).bind(targetUid).run();
+      // 删除用户记录
+      await db.prepare(`DELETE FROM users WHERE id = ?`).bind(targetUid).run();
+      return jsonResp({ code:0, msg:'用户删除成功' });
+    }
+
     return jsonResp({ code:99, msg:'非法请求' }, 405);
   } catch (globalErr) {
     return jsonResp({ code:500, msg:'服务器内部错误', err: globalErr.message }, 500);

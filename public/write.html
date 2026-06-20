@@ -30,7 +30,7 @@ async function checkLogin() {
     location.href='/login.html';
     return;
   }
-  // 访客直接拦截发文
+  // 访客、封禁账号禁止发文
   if(data.role === 'guest' || data.role === 'banned'){
     alert('访客身份不能发布文章');
     location.href='/index.html';

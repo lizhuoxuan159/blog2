@@ -44,6 +44,7 @@ async function loadUserList(){
       <option value="banned">封禁 banned</option>
     </select>
     <button class="glass-btn" onclick="saveRole(${u.id})">保存修改</button>
+    <button class="glass-btn" style="background:rgba(255,80,80,0.25)" onclick="delUser(${u.id},'${escapeHtml(u.username)}')">删除用户</button>
   </div>
   `).join('');
   // 回填现有角色
@@ -59,6 +60,21 @@ async function saveRole(uid){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({targetUid:uid,newRole})
   })
+  const ret = await res.json();
+  alert(ret.msg);
+  loadUserList();
+}
+
+// 删除用户函数
+async function delUser(uid, uname){
+  if(!confirm(`确定要删除用户【${uname}】吗？该用户所有文章也会被一并删除，操作不可恢复！`)){
+    return;
+  }
+  const res = await fetch('/api/user?action=deleteUser',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({targetUid:uid})
+  });
   const ret = await res.json();
   alert(ret.msg);
   loadUserList();
