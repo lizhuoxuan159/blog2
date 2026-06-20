@@ -1,22 +1,22 @@
-<!DOCTYPE html>
+ï»¿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>µÇÂ¼</title>
+  <title>ç™»å½•</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 <div class="container">
   <nav>
-    <a href="/index.html"><button class="glass-btn">·µ»ØÊ×Ò³</button></a>
+    <a href="/index.html"><button class="glass-btn">è¿”å›é¦–é¡µ</button></a>
   </nav>
   <div class="glass" style="max-width:420px;margin:0 auto">
-    <h2>ÓÃ»§µÇÂ¼</h2>
-    <input type="text" id="username" placeholder="ÓÃ»§Ãû">
-    <input type="password" id="password" placeholder="ÃÜÂë">
-    <button class="glass-btn" style="width:100%" onclick="login()">µÇÂ¼</button>
-    <p style="margin-top:12px;text-align:center">Ã»ÓĞÕËºÅ£¿<a href="/register.html">È¥×¢²á</a></p>
+    <h2>ç”¨æˆ·ç™»å½•</h2>
+    <input type="text" id="username" placeholder="ç”¨æˆ·å">
+    <input type="password" id="password" placeholder="å¯†ç ">
+    <button class="glass-btn" style="width:100%" onclick="login()">ç™»å½•</button>
+    <p style="margin-top:12px;text-align:center">æ²¡æœ‰è´¦å·ï¼Ÿ<a href="/register.html">å»æ³¨å†Œ</a></p>
   </div>
 </div>
 
@@ -24,7 +24,7 @@
 async function login(){
   const u = document.getElementById('username').value.trim();
   const p = document.getElementById('password').value.trim();
-  if(!u||!p) return alert('ÌîĞ´ÍêÕû');
+  if(!u||!p) return alert('å¡«å†™å®Œæ•´');
   const res = await fetch('/api/user?action=login',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -33,7 +33,7 @@ async function login(){
   const data = await res.json();
   if(data.code===0){
     localStorage.setItem('token',data.token);
-    alert('µÇÂ¼³É¹¦');
+    alert('ç™»å½•æˆåŠŸ');
     location.href='/index.html';
   }else{
     alert(data.msg);

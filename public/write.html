@@ -1,28 +1,28 @@
-<!DOCTYPE html>
+ï»¿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>·¢²¼ÎÄÕÂ</title>
+  <title>å‘å¸ƒæ–‡ç« </title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 <div class="container">
   <nav>
-    <a href="/index.html"><button class="glass-btn">·µ»ØÊ×Ò³</button></a>
+    <a href="/index.html"><button class="glass-btn">è¿”å›é¦–é¡µ</button></a>
   </nav>
   <div class="glass">
-    <h2>×«Ğ´ĞÂÎÄÕÂ</h2>
-    <input type="text" id="title" placeholder="ÎÄÕÂ±êÌâ">
-    <textarea id="content" rows="8" placeholder="ÎÄÕÂÄÚÈİ"></textarea>
-    <button class="glass-btn" onclick="publish()">·¢²¼</button>
+    <h2>æ’°å†™æ–°æ–‡ç« </h2>
+    <input type="text" id="title" placeholder="æ–‡ç« æ ‡é¢˜">
+    <textarea id="content" rows="8" placeholder="æ–‡ç« å†…å®¹"></textarea>
+    <button class="glass-btn" onclick="publish()">å‘å¸ƒ</button>
   </div>
 </div>
 
 <script>
 const token = localStorage.getItem('token');
 if(!token){
-  alert('ÇëÏÈµÇÂ¼');
+  alert('è¯·å…ˆç™»å½•');
   location.href='/login.html';
 }
 function getUid(){
@@ -36,7 +36,7 @@ function escapeHtml(str) {
 async function publish(){
   const title = document.getElementById('title').value.trim();
   const content = document.getElementById('content').value.trim();
-  if(!title||!content) return alert('±êÌâÄÚÈİ²»ÄÜÎª¿Õ');
+  if(!title||!content) return alert('æ ‡é¢˜å†…å®¹ä¸èƒ½ä¸ºç©º');
   const res = await fetch('/api/post?action=create',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -44,7 +44,7 @@ async function publish(){
   });
   const data = await res.json();
   if(data.code===0){
-    alert('·¢²¼³É¹¦');
+    alert('å‘å¸ƒæˆåŠŸ');
     location.href='/index.html';
   }
 }

@@ -1,15 +1,15 @@
-<!DOCTYPE html>
+ï»¿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ÎÄÕÂÏêÇé</title>
+  <title>æ–‡ç« è¯¦æƒ…</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 <div class="container">
   <nav>
-    <a href="/index.html"><button class="glass-btn">·µ»ØÊ×Ò³</button></a>
+    <a href="/index.html"><button class="glass-btn">è¿”å›žé¦–é¡µ</button></a>
   </nav>
   <div class="glass" id="articleBox"></div>
 </div>
@@ -25,7 +25,7 @@ async function loadDetail(){
   const p = await res.json();
   document.getElementById('articleBox').innerHTML = `
     <h1>${escapeHtml(p.title)}</h1>
-    <p style="opacity:0.7;margin:10px 0">×÷Õß£º${escapeHtml(p.username)} | ${p.created_at}</p>
+    <p style="opacity:0.7;margin:10px 0">ä½œè€…ï¼š${escapeHtml(p.username)} | ${p.created_at}</p>
     <hr>
     <p style="white-space:pre-line;line-height:1.7">${escapeHtml(p.content)}</p>
   `;
