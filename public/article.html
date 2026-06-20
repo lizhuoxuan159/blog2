@@ -89,8 +89,13 @@ function refreshCommentInputTip(){
 async function loadDetail(){
   const res = await fetch(`/api/post?action=detail&id=${postId}`);
   const data = await res.json();
+  // 判断文章不存在，跳404错误页
+  if(data?.notFound === true){
+    location.href = `/error.html?code=404&msg=该文章不存在或已被删除`;
+    return;
+  }
   if(!data){
-    location.href = "/error.html?code=404&msg=页面找不到";
+    location.href = `/error.html?code=404&msg=该文章不存在或已被删除`;
     return;
   }
   postAuthorId = data.author_id;

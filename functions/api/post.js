@@ -52,6 +52,9 @@ export async function onRequest({ request, env }) {
         SELECT p.*, u.username, u.is_cancel FROM posts p
         LEFT JOIN users u ON p.author_id = u.id WHERE p.id = ?
       `).bind(id).first();
+	if (!row) {
+    		return jsonResp({ notFound: true }, 404);
+  	}
       let displayAuthor = row?.username;
       if(row?.is_cancel === 1 || displayAuthor === null){
         displayAuthor = "账户已注销";
