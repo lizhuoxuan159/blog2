@@ -5,6 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>文章详情</title>
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .comment-item{
+      margin:12px 0;
+      padding:12px;
+      border:1px solid rgba(255,255,255,0.2);
+      border-radius:8px;
+    }
+    .cm-del-btn{
+      margin-left:10px;
+      background:rgba(255,80,80,0.2);
+    }
+  </style>
 </head>
 <body>
 <div class="container">
@@ -17,6 +29,19 @@
     <p id="postInfo" style="opacity:0.8;margin:8px 0"></p>
     <hr>
     <div id="postContent"></div>
+  </div>
+
+  <!-- 评论区域 -->
+  <div class="glass" style="max-width:600px;margin:30px auto">
+    <h3>评论区</h3>
+    <div id="cmInputArea" style="margin:15px 0;">
+      <textarea id="cmContent" style="width:100%;min-height:80px;padding:8px;border-radius:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;" placeholder="输入评论内容..."></textarea>
+      <div style="margin-top:8px;text-align:right">
+        <button class="glass-btn" onclick="submitComment()">发表评论</button>
+      </div>
+      <p id="cmTip" style="color:#ffaaaa;margin:5px 0;display:none"></p>
+    </div>
+    <div id="commentList"></div>
   </div>
 </div>
 
@@ -39,6 +64,25 @@ async function checkLoginState(){
     currentLoginUid = data.uid;
     currentLoginRole = data.role;
   }
+  refreshCommentInputTip();
+}
+
+// 控制评论输入框提示（访客可以评论，仅封禁不行）
+function refreshCommentInputTip(){
+  const inputWrap = document.getElementById('cmInputArea');
+  const tip = document.getElementById('cmTip');
+  if(!currentLoginUid){
+    inputWrap.style.display = 'none';
+    tip.innerText = '登录后才可以发表评论';
+    tip.style.display = 'block';
+  }else if(currentLoginRole === 'banned'){
+    inputWrap.style.display = 'none';
+    tip.innerText = '封禁账号无法发表评论';
+    tip.style.display = 'block';
+  }else{
+    inputWrap.style.display = 'block';
+    tip.style.display = 'none';
+  }
 }
 
 // 加载文章详情
@@ -56,12 +100,13 @@ async function loadDetail(){
   document.getElementById('postInfo').innerText = `作者：${authorName} | ${data.created_at}`;
   document.getElementById('postContent').innerText = data.content;
 
-  // 判断是否有权限显示删除按钮：管理员 或 文章本人
+  // 判断是否有权限显示删除文章按钮
   await checkLoginState();
   const delBtn = document.getElementById('delPostBtn');
   if(currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId)){
     delBtn.style.display = 'inline-block';
   }
+  loadCommentList();
 }
 
 // 删除文章函数
@@ -75,6 +120,69 @@ async function deleteArticle(){
   const ret = await res.json();
   alert(ret.msg);
   location.href='/index.html';
+}
+
+// 加载评论列表
+async function loadCommentList(){
+  const res = await fetch(`/api/post?action=getComment&postId=${postId}`);
+  const cmList = await res.json();
+  const wrap = document.getElementById('commentList');
+  if(cmList.length === 0){
+    wrap.innerHTML = '<p style="opacity:0.7">暂无评论</p>';
+    return;
+  }
+  let html = '';
+  cmList.forEach(cm=>{
+    let showDelBtn = false;
+    // 管理员 或 评论本人 可删评论
+    if(currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === cm.userId)){
+      showDelBtn = true;
+    }
+    html += `
+    <div class="comment-item">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span>${escapeHtml(cm.userName)} · ${cm.createTime}</span>
+        ${showDelBtn ? `<button class="glass-btn cm-del-btn" onclick="delComment(${cm.id})">删除</button>` : ''}
+      </div>
+      <p style="margin:8px 0;white-space:pre-wrap">${escapeHtml(cm.content)}</p>
+    </div>
+    `
+  })
+  wrap.innerHTML = html;
+}
+
+// 提交评论
+async function submitComment(){
+  const content = document.getElementById('cmContent').value.trim();
+  if(!content){
+    alert('评论内容不能为空');
+    return;
+  }
+  const res = await fetch('/api/post?action=addComment',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({postId, content})
+  })
+  const ret = await res.json();
+  if(ret.code === 0){
+    document.getElementById('cmContent').value = '';
+    loadCommentList();
+  }else{
+    alert(ret.msg);
+  }
+}
+
+// 删除单条评论
+async function delComment(cmId){
+  if(!confirm('确定删除这条评论？')) return;
+  const res = await fetch('/api/post?action=delComment',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({commentId: cmId})
+  })
+  const ret = await res.json();
+  alert(ret.msg);
+  loadCommentList();
 }
 
 loadDetail();
