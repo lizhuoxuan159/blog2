@@ -1,0 +1,73 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理员用户管理</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="container">
+  <nav>
+    <a href="/index.html"><button class="glass-btn">返回首页</button></a>
+  </nav>
+  <div class="glass">
+    <h2>用户权限管理面板</h2>
+    <div id="userListWrap"></div>
+  </div>
+</div>
+<script>
+// 权限校验，非管理员跳转首页
+async function checkAuth(){
+  const res = await fetch('/api/user?action=check');
+  const data = await res.json();
+  if(!data.login || data.role !== 'admin'){
+    alert('你不是管理员，无权访问');
+    location.href='/index.html';
+    return;
+  }
+  loadUserList();
+}
+
+async function loadUserList(){
+  const res = await fetch('/api/user?action=userList');
+  const data = await res.json();
+  if(data.code !== 0) return alert(data.msg);
+  const wrap = document.getElementById('userListWrap');
+  wrap.innerHTML = data.list.map(u=>`
+  <div style="margin:10px 0;padding:10px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;display:flex;align-items:center;gap:15px;flex-wrap:wrap">
+    <span>ID:${u.id} | 用户名:${escapeHtml(u.username)} | 当前角色:${u.role}</span>
+    <select id="role_${u.id}">
+      <option value="guest">访客 guest</option>
+      <option value="writer">作家 writer</option>
+      <option value="admin">管理员 admin</option>
+      <option value="banned">封禁 banned</option>
+    </select>
+    <button class="glass-btn" onclick="saveRole(${u.id})">保存修改</button>
+  </div>
+  `).join('');
+  // 回填现有角色
+  data.list.forEach(u=>{
+    document.getElementById(`role_${u.id}`).value = u.role;
+  })
+}
+
+async function saveRole(uid){
+  const newRole = document.getElementById(`role_${uid}`).value;
+  const res = await fetch('/api/user?action=setRole',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({targetUid:uid,newRole})
+  })
+  const ret = await res.json();
+  alert(ret.msg);
+  loadUserList();
+}
+
+function escapeHtml(str){
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+checkAuth();
+</script>
+</body>
+</html>
