@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>发布文章</title>
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .tip-text {
+      font-size: 13px;
+      opacity: 0.75;
+      margin: 4px 0 12px;
+    }
+  </style>
 </head>
 <body>
 <div class="container">
@@ -13,42 +20,42 @@
   </nav>
   <div class="glass">
     <h2>撰写新文章</h2>
-    <input type="text" id="title" placeholder="文章标题">
-    <textarea id="content" rows="8" placeholder="文章内容"></textarea>
+
+    <input type="text" id="title" placeholder="文章标题" style="width:100%;padding:8px;margin-bottom:8px;">
+
+    <label>定时发布时间：</label>
+    <input type="datetime-local" id="publishTime">
+    <p class="tip-text">留空为立即发布；仅可选择未来时间定时推送</p>
+
+    <textarea id="content" rows="8" placeholder="文章内容" style="width:100%;padding:8px;margin:8px 0;"></textarea>
+
     <button class="glass-btn" onclick="publish()">发布</button>
   </div>
 </div>
 
 <script>
-// 页面加载立即执行登录校验
-(async function checkAuthRedirect() {
+let loginUid = null;
+
+(async function checkAuth() {
   const res = await fetch('/api/user?action=check');
   const data = await res.json();
-  // 未登录 / 账号注销 / 账号封禁 → 跳转登录
+
+  // 未登录：跳转登录并记录原路返回
   if (!data.login) {
-    // 记录当前页面地址，登录成功后自动跳回来
     const currentUrl = location.href;
     location.href = `/login.html?redirect=${encodeURIComponent(currentUrl)}`;
     return;
   }
-})();
-let loginUid = null;
 
-async function checkLogin() {
-  const res = await fetch('/api/user?action=check');
-  const data = await res.json();
-  if(!data.login){
-    alert('请先登录');
-    location.href='/login.html';
-    return;
-  }
-  // 访客、封禁账号禁止发文
+  // 访客/封禁账号 403拦截
   if(data.role === 'guest' || data.role === 'banned'){
-    location.href = `/error.html?code=403&msg=对不起，你没有权限`;
+    location.href = `/error.html?code=403&msg=对不起，你没有权限发布文章`;
     return;
   }
+
+  // 校验通过，保存用户ID
   loginUid = data.uid;
-}
+})();
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -58,11 +65,27 @@ function escapeHtml(str) {
 async function publish(){
   const title = document.getElementById('title').value.trim();
   const content = document.getElementById('content').value.trim();
+  const timeInput = document.getElementById('publishTime').value;
+
   if(!title||!content) return alert('标题内容不能为空');
+
+  let publishTime = null;
+  if(timeInput){
+    // 本地选中时间
+    const selectTime = new Date(timeInput);
+    const now = new Date();
+    // 禁止选择过去时间
+    if(selectTime <= now){
+      return alert('定时发布不能选择当前或过去时间，请留空立即发布或选择未来时间');
+    }
+    // 前端本地时间转UTC存入数据库，匹配D1 UTC存储
+    publishTime = selectTime.toISOString();
+  }
+
   const res = await fetch('/api/post?action=create',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({title,content})
+    body:JSON.stringify({title,content,publishTime})
   });
   const data = await res.json();
   if(data.code===0){
@@ -72,8 +95,6 @@ async function publish(){
     alert(data.msg);
   }
 }
-
-checkLogin();
 </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-function jsonResp(data, status = 200) {
+﻿function jsonResp(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8' }
@@ -37,9 +37,9 @@ export async function onRequest({ request, env }) {
     // 文章列表
     if (request.method === 'GET' && action === 'list') {
       const rawList = await db.prepare(`
-        SELECT p.id, p.title, p.content, p.created_at, u.username, u.role, u.is_cancel, p.author_id
+        SELECT p.id, p.title, p.content, p.created_at, p.publish_time, u.username, u.role, u.is_cancel, p.author_id
         FROM posts p LEFT JOIN users u ON p.author_id = u.id
-        ORDER BY p.created_at DESC
+        ORDER BY p.publish_time DESC
       `).all();
       const list = rawList.results.map(item=>{
         let displayName = item.username;
@@ -49,13 +49,14 @@ export async function onRequest({ request, env }) {
         return {
           ...item,
           authorName: displayName,
-          created_at: toUTC8Time(item.created_at)
+          created_at: toUTC8Time(item.created_at),
+          publish_time: toUTC8Time(item.publish_time)
         }
       })
       return jsonResp(list);
     }
 
-    // 文章详情
+    // 文章详情 + 不存在返回404
     if (request.method === 'GET' && action === 'detail') {
       const id = url.searchParams.get('id');
       const row = await db.prepare(`
@@ -72,24 +73,27 @@ export async function onRequest({ request, env }) {
       return jsonResp({
         ...row,
         displayAuthor,
-        created_at: toUTC8Time(row.created_at)
+        created_at: toUTC8Time(row.created_at),
+        publish_time: toUTC8Time(row.publish_time)
       });
     }
 
-    // 新建文章
+    // 新建文章（支持定时发布 publishTime）
     if (request.method === 'POST' && action === 'create') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const allowPostRole = ['admin','writer'];
       if (!allowPostRole.includes(loginUser.role)) {
         return jsonResp({ code:98, msg:'当前身份不能发布文章' }, 403);
       }
-      const { title, content } = await request.json();
-      await db.prepare(`INSERT INTO posts (title, content, author_id) VALUES (?, ?, ?)`)
-        .bind(title, content, loginUser.uid).run();
+      const { title, content, publishTime } = await request.json();
+      if (!title || !content) return jsonResp({ code:1, msg:'标题和内容不能为空' });
+      const finalPublish = publishTime || new Date().toISOString();
+      await db.prepare(`INSERT INTO posts (title, content, author_id, publish_time) VALUES (?, ?, ?, ?)`)
+        .bind(title, content, loginUser.uid, finalPublish).run();
       return jsonResp({ code:0, msg:'发布成功' });
     }
 
-    // ================== 新增：编辑文章 ==================
+    // 编辑文章接口
     if (request.method === 'POST' && action === 'edit') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const { postId, title, content } = await request.json();
@@ -124,7 +128,7 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code:0, msg:'删除成功' });
     }
 
-    // 评论列表
+    // 获取评论列表
     if (request.method === 'GET' && action === 'getComment') {
       const postId = url.searchParams.get('postId');
       const comments = await db.prepare(`
@@ -148,7 +152,7 @@ export async function onRequest({ request, env }) {
       return jsonResp(resList);
     }
 
-    // 发表评论
+    // 发表评论（访客可评论，仅封禁禁止）
     if (request.method === 'POST' && action === 'addComment') {
       if (!loginUser) return jsonResp({ code:99, msg:'请登录后发表评论' }, 401);
       const banRole = ['banned'];
@@ -175,8 +179,10 @@ export async function onRequest({ request, env }) {
       return jsonResp({code:0, msg:'评论已删除'});
     }
 
+    // 未知action兜底404
     return jsonResp({ code:99, msg:'接口不存在' }, 404);
   } catch (e) {
+    // 全局异常捕获，统一500返回
     return jsonResp({ code:500, msg:'服务器错误', err:e.message }, 500);
   }
 }
