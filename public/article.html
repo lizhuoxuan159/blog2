@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -16,19 +16,58 @@
       margin-left:10px;
       background:rgba(255,80,80,0.2);
     }
+    .edit-modal{
+      position:fixed;
+      top:0;left:0;right:0;bottom:0;
+      background:rgba(0,0,0,0.5);
+      display:flex;align-items:center;justify-content:center;
+      z-index:9999;
+      display:none;
+    }
+    .edit-box{
+      background:#222;
+      padding:20px;
+      border-radius:10px;
+      width:90%;
+      max-width:500px;
+    }
+    .edit-box input,.edit-box textarea{
+      width:100%;
+      padding:8px;
+      margin:6px 0;
+      border-radius:6px;
+      background:rgba(255,255,255,0.1);
+      color:#fff;
+      border:1px solid #ccc;
+    }
   </style>
 </head>
 <body>
 <div class="container">
   <div style="text-align:center;margin:20px 0">
     <a href="/index.html"><button class="glass-btn">返回首页</button></a>
+    <button id="editPostBtn" class="glass-btn" style="margin-left:10px;display:none">编辑文章</button>
     <button id="delPostBtn" class="glass-btn" style="background:rgba(255,80,80,0.25);margin-left:10px;display:none" onclick="deleteArticle()">删除此文</button>
   </div>
+
   <div class="glass" style="max-width:600px;margin:0 auto">
     <h2 id="postTitle"></h2>
     <p id="postInfo" style="opacity:0.8;margin:8px 0"></p>
     <hr>
     <div id="postContent"></div>
+  </div>
+
+  <!-- 编辑弹窗 -->
+  <div class="edit-modal" id="editModal">
+    <div class="edit-box">
+      <h3>编辑文章</h3>
+      <input id="editTitle" placeholder="标题">
+      <textarea id="editContent" rows="8" placeholder="内容"></textarea>
+      <div style="text-align:right;margin-top:10px">
+        <button class="glass-btn" onclick="closeEdit()">取消</button>
+        <button class="glass-btn" onclick="saveEdit()">保存</button>
+      </div>
+    </div>
   </div>
 
   <!-- 评论区域 -->
@@ -50,13 +89,14 @@ let postId = new URLSearchParams(location.search).get('id');
 let currentLoginUid = null;
 let currentLoginRole = null;
 let postAuthorId = null;
+let currentTitle = '';
+let currentContent = '';
 
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// 检查登录状态
 async function checkLoginState(){
   const res = await fetch('/api/user?action=check');
   const data = await res.json();
@@ -67,7 +107,6 @@ async function checkLoginState(){
   refreshCommentInputTip();
 }
 
-// 控制评论输入框提示（访客可以评论，仅封禁不行）
 function refreshCommentInputTip(){
   const inputWrap = document.getElementById('cmInputArea');
   const tip = document.getElementById('cmTip');
@@ -85,11 +124,9 @@ function refreshCommentInputTip(){
   }
 }
 
-// 加载文章详情
 async function loadDetail(){
   const res = await fetch(`/api/post?action=detail&id=${postId}`);
   const data = await res.json();
-  // 判断文章不存在，跳404错误页
   if(data?.notFound === true){
     location.href = `/error.html?code=404&msg=该文章不存在或已被删除`;
     return;
@@ -99,21 +136,60 @@ async function loadDetail(){
     return;
   }
   postAuthorId = data.author_id;
+  currentTitle = data.title;
+  currentContent = data.content;
+
   let authorName = data.displayAuthor;
   document.getElementById('postTitle').innerText = data.title;
   document.getElementById('postInfo').innerText = `作者：${authorName} | ${data.created_at}`;
   document.getElementById('postContent').innerText = data.content;
 
-  // 判断是否有权限显示删除文章按钮
   await checkLoginState();
+
   const delBtn = document.getElementById('delPostBtn');
-  if(currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId)){
+  const editBtn = document.getElementById('editPostBtn');
+
+  // 作者或管理员显示编辑/删除
+  const canManage = currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId);
+  if(canManage){
+    editBtn.style.display = 'inline-block';
     delBtn.style.display = 'inline-block';
   }
+
   loadCommentList();
 }
 
-// 删除文章函数
+// 打开编辑框
+function openEdit(){
+  document.getElementById('editTitle').value = currentTitle;
+  document.getElementById('editContent').value = currentContent;
+  document.getElementById('editModal').style.display = 'flex';
+}
+// 关闭编辑
+function closeEdit(){
+  document.getElementById('editModal').style.display = 'none';
+}
+// 保存编辑
+async function saveEdit(){
+  const title = document.getElementById('editTitle').value.trim();
+  const content = document.getElementById('editContent').value.trim();
+  if(!title || !content){
+    alert('标题和内容不能为空');
+    return;
+  }
+  const res = await fetch('/api/post?action=edit',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ postId, title, content })
+  });
+  const ret = await res.json();
+  alert(ret.msg);
+  if(ret.code === 0){
+    closeEdit();
+    loadDetail();
+  }
+}
+
 async function deleteArticle(){
   if(!confirm('确定删除这篇文章？删除后不可恢复！')) return;
   const res = await fetch('/api/post?action=delete',{
@@ -126,7 +202,6 @@ async function deleteArticle(){
   location.href='/index.html';
 }
 
-// 加载评论列表
 async function loadCommentList(){
   const res = await fetch(`/api/post?action=getComment&postId=${postId}`);
   const cmList = await res.json();
@@ -138,7 +213,6 @@ async function loadCommentList(){
   let html = '';
   cmList.forEach(cm=>{
     let showDelBtn = false;
-    // 管理员 或 评论本人 可删评论
     if(currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === cm.userId)){
       showDelBtn = true;
     }
@@ -155,7 +229,6 @@ async function loadCommentList(){
   wrap.innerHTML = html;
 }
 
-// 提交评论
 async function submitComment(){
   const content = document.getElementById('cmContent').value.trim();
   if(!content){
@@ -176,7 +249,6 @@ async function submitComment(){
   }
 }
 
-// 删除单条评论
 async function delComment(cmId){
   if(!confirm('确定删除这条评论？')) return;
   const res = await fetch('/api/post?action=delComment',{
@@ -188,6 +260,9 @@ async function delComment(cmId){
   alert(ret.msg);
   loadCommentList();
 }
+
+// 绑定编辑按钮
+document.getElementById('editPostBtn').onclick = openEdit;
 
 loadDetail();
 </script>
