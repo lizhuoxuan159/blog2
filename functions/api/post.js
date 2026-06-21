@@ -9,9 +9,7 @@ function jsonResp(data, status = 200) {
 function toUTC8Time(utcTime) {
   if (!utcTime) return null;
   const date = new Date(utcTime);
-  // 手动加上 8 小时（服务器是 UTC+0）
   date.setHours(date.getHours() + 8);
-  // 格式化为 YYYY-MM-DD HH:mm:ss
   const pad = (n) => n.toString().padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
@@ -36,7 +34,7 @@ export async function onRequest({ request, env }) {
     const action = url.searchParams.get('action');
     const loginUser = await getLoginUser(request);
 
-    // 文章列表，自动判断注销状态
+    // 文章列表
     if (request.method === 'GET' && action === 'list') {
       const rawList = await db.prepare(`
         SELECT p.id, p.title, p.content, p.created_at, u.username, u.role, u.is_cancel, p.author_id
@@ -51,7 +49,6 @@ export async function onRequest({ request, env }) {
         return {
           ...item,
           authorName: displayName,
-          // 转换为东八区时间
           created_at: toUTC8Time(item.created_at)
         }
       })
@@ -75,12 +72,11 @@ export async function onRequest({ request, env }) {
       return jsonResp({
         ...row,
         displayAuthor,
-        // 转换为东八区时间
         created_at: toUTC8Time(row.created_at)
       });
     }
 
-    // 新建文章权限控制
+    // 新建文章
     if (request.method === 'POST' && action === 'create') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const allowPostRole = ['admin','writer'];
@@ -93,7 +89,28 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code:0, msg:'发布成功' });
     }
 
-    // 删除文章权限
+    // ================== 新增：编辑文章 ==================
+    if (request.method === 'POST' && action === 'edit') {
+      if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
+      const { postId, title, content } = await request.json();
+
+      const post = await db.prepare("SELECT author_id FROM posts WHERE id = ?")
+        .bind(postId).first();
+
+      if (!post) return jsonResp({ code:1, msg:'文章不存在' });
+
+      // 仅作者和管理员可编辑
+      if (loginUser.role !== 'admin' && post.author_id !== loginUser.uid) {
+        return jsonResp({ code:98, msg:'无权限编辑' }, 403);
+      }
+
+      await db.prepare("UPDATE posts SET title = ?, content = ? WHERE id = ?")
+        .bind(title, content, postId).run();
+
+      return jsonResp({ code:0, msg:'修改成功' });
+    }
+
+    // 删除文章
     if (request.method === 'POST' && action === 'delete') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const { postId } = await request.json();
@@ -107,10 +124,9 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code:0, msg:'删除成功' });
     }
 
-    // ========== 评论接口 1：获取某文章全部评论 ==========
+    // 评论列表
     if (request.method === 'GET' && action === 'getComment') {
       const postId = url.searchParams.get('postId');
-      // 联表查询，注销用户显示「账户已注销」
       const comments = await db.prepare(`
         SELECT c.id, c.content, c.created_at, c.user_id, u.username, u.is_cancel
         FROM comments c
@@ -124,7 +140,6 @@ export async function onRequest({ request, env }) {
         return {
           id: cm.id,
           content: cm.content,
-          // 转换为东八区时间
           createTime: toUTC8Time(cm.created_at),
           userId: cm.user_id,
           userName: name
@@ -133,13 +148,11 @@ export async function onRequest({ request, env }) {
       return jsonResp(resList);
     }
 
-    // ========== 评论接口 2：发表评论 ==========
+    // 发表评论
     if (request.method === 'POST' && action === 'addComment') {
       if (!loginUser) return jsonResp({ code:99, msg:'请登录后发表评论' }, 401);
-      // 封禁、访客禁止发评论
-      // 仅封禁账号禁止发评论
-	  const banRole = ['banned'];
-	  if(banRole.includes(loginUser.role)){
+      const banRole = ['banned'];
+      if(banRole.includes(loginUser.role)){
   		return jsonResp({ code:98, msg:'封禁账号无法发表评论' }, 403);
 	  }
       const { postId, content } = await request.json();
@@ -149,13 +162,12 @@ export async function onRequest({ request, env }) {
       return jsonResp({code:0, msg:'评论发表成功'});
     }
 
-    // ========== 评论接口 3：删除评论 ==========
+    // 删除评论
     if (request.method === 'POST' && action === 'delComment') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const { commentId } = await request.json();
       const cmInfo = await db.prepare(`SELECT user_id FROM comments WHERE id = ?`).bind(commentId).first();
       if(!cmInfo) return jsonResp({code:1, msg:'评论不存在'});
-      // 管理员可删全部，普通人只能删自己评论
       if(loginUser.role !== 'admin' && cmInfo.user_id !== loginUser.uid){
         return jsonResp({code:98, msg:'无权删除这条评论'}, 403);
       }
