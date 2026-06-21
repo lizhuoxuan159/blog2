@@ -1,8 +1,19 @@
-﻿function jsonResp(data, status = 200) {
+function jsonResp(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8' }
   });
+}
+
+// 工具函数：将 UTC 时间转换为东八区（UTC+8）的格式化时间
+function toUTC8Time(utcTime) {
+  if (!utcTime) return null;
+  const date = new Date(utcTime);
+  // 手动加上 8 小时（服务器是 UTC+0）
+  date.setHours(date.getHours() + 8);
+  // 格式化为 YYYY-MM-DD HH:mm:ss
+  const pad = (n) => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 async function getLoginUser(request) {
@@ -39,7 +50,9 @@ export async function onRequest({ request, env }) {
         }
         return {
           ...item,
-          authorName: displayName
+          authorName: displayName,
+          // 转换为东八区时间
+          created_at: toUTC8Time(item.created_at)
         }
       })
       return jsonResp(list);
@@ -52,14 +65,19 @@ export async function onRequest({ request, env }) {
         SELECT p.*, u.username, u.is_cancel FROM posts p
         LEFT JOIN users u ON p.author_id = u.id WHERE p.id = ?
       `).bind(id).first();
-	if (!row) {
+	  if (!row) {
     		return jsonResp({ notFound: true }, 404);
-  	}
+  	  }
       let displayAuthor = row?.username;
       if(row?.is_cancel === 1 || displayAuthor === null){
         displayAuthor = "账户已注销";
       }
-      return jsonResp({...row, displayAuthor});
+      return jsonResp({
+        ...row,
+        displayAuthor,
+        // 转换为东八区时间
+        created_at: toUTC8Time(row.created_at)
+      });
     }
 
     // 新建文章权限控制
@@ -106,7 +124,8 @@ export async function onRequest({ request, env }) {
         return {
           id: cm.id,
           content: cm.content,
-          createTime: cm.created_at,
+          // 转换为东八区时间
+          createTime: toUTC8Time(cm.created_at),
           userId: cm.user_id,
           userName: name
         }
@@ -119,10 +138,10 @@ export async function onRequest({ request, env }) {
       if (!loginUser) return jsonResp({ code:99, msg:'请登录后发表评论' }, 401);
       // 封禁、访客禁止发评论
       // 仅封禁账号禁止发评论
-	const banRole = ['banned'];
-	if(banRole.includes(loginUser.role)){
+	  const banRole = ['banned'];
+	  if(banRole.includes(loginUser.role)){
   		return jsonResp({ code:98, msg:'封禁账号无法发表评论' }, 403);
-	}
+	  }
       const { postId, content } = await request.json();
       if(!content.trim()) return jsonResp({code:1, msg:'评论内容不能为空'});
       await db.prepare(`INSERT INTO comments (post_id, user_id, content) VALUES (?, ?, ?)`)
