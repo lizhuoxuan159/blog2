@@ -44,8 +44,7 @@ async function checkLogin() {
   }
   // 访客、封禁账号禁止发文
   if(data.role === 'guest' || data.role === 'banned'){
-    alert('访客身份不能发布文章');
-    location.href='/index.html';
+    location.href = `/error.html?code=403&msg=对不起，你没有权限`;
     return;
   }
   loginUid = data.uid;
