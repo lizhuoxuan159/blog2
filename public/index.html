@@ -39,6 +39,7 @@ function renderNav() {
   const nav = document.getElementById('nav');
   if(isLogin){
     let roleText = "";
+    if(currentUser.role === "owner") roleText = "【站主】";
     if(currentUser.role === "admin") roleText = "【管理员】";
     else if(currentUser.role === "writer") roleText = "【作家】";
     else if(currentUser.role === "guest") roleText = "【访客】";
@@ -47,6 +48,7 @@ function renderNav() {
       <a href="/write.html"><button class="glass-btn">写文章</button></a>
       <a href="/account.html"><button class="glass-btn">个人中心</button></a>
       ${currentUser.role==='admin'?`<a href="/admin.html"><button class="glass-btn">用户管理</button></a>`:''}
+      ${currentUser.role==='owner'?`<a href="/admin.html"><button class="glass-btn">用户管理</button></a>`:''}
       <span style="color:#fff;line-height:40px;margin:0 10px">${currentUser.username}${roleText}</span>
       <button class="glass-btn" onclick="logout()">退出登录</button>
     `;
