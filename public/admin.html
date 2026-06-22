@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -15,6 +15,7 @@
     <h3>手动创建新用户</h3>
     <input type="text" id="newUser" placeholder="用户名">
     <input type="password" id="newPwd" placeholder="初始密码">
+    <!-- 管理员创建用户 移除owner选项 -->
     <select id="newRole">
       <option value="guest">访客 guest</option>
       <option value="writer">作家 writer</option>
@@ -29,13 +30,10 @@
   </div>
 </div>
 <script>
-// 页面加载立即执行登录校验
 (async function checkAuthRedirect() {
   const res = await fetch('/api/user?action=check');
   const data = await res.json();
-  // 未登录 / 账号注销 / 账号封禁 → 跳转登录
   if (!data.login) {
-    // 记录当前页面地址，登录成功后自动跳回来
     const currentUrl = location.href;
     location.href = `/login.html?redirect=${encodeURIComponent(currentUrl)}`;
     return;
@@ -44,7 +42,7 @@
 async function checkAuth(){
   const res = await fetch('/api/user?action=check');
   const data = await res.json();
-  if(!data.login || data.role !== 'admin'){
+  if(!data.login || data.role === 'guest' || data.role === 'banned'){
     location.href = `/error.html?code=403&msg=对不起，你没有权限`;
     return;
   }
@@ -70,22 +68,54 @@ async function loadUserList(){
   const res = await fetch('/api/user?action=userList');
   const data = await res.json();
   if(data.code !== 0) return alert(data.msg);
+  const loginRes = await fetch('/api/user?action=check');
+  const loginInfo = await loginRes.json();
+  const myRole = loginInfo.role;
+  const myUid = loginInfo.uid;
+
   const wrap = document.getElementById('userListWrap');
-  wrap.innerHTML = data.list.map(u=>`
+  wrap.innerHTML = data.list.map(u=>{
+    let optionHtml = '';
+    // owner 只能所有者自己修改，admin看不到owner选项
+    if(myRole === 'owner'){
+      optionHtml = `
+        <option value="owner">所有者 owner</option>
+        <option value="admin">管理员 admin</option>
+        <option value="writer">作家 writer</option>
+        <option value="guest">访客 guest</option>
+        <option value="banned">封禁 banned</option>
+      `;
+    }else{
+      // admin 无owner选项，且不能修改其他admin
+      if(u.role === 'owner' || u.role === 'admin'){
+        optionHtml = `<option value="${u.role}">${u.role}（不可修改）</option>`;
+      }else{
+        optionHtml = `
+          <option value="guest">访客 guest</option>
+          <option value="writer">作家 writer</option>
+          <option value="banned">封禁 banned</option>
+        `;
+      }
+    }
+    let delBtnShow = true;
+    // admin不能删owner、其他admin
+    if(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')){
+      delBtnShow = false;
+    }
+    return `
   <div style="margin:10px 0;padding:10px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;display:flex;align-items:center;gap:15px;flex-wrap:wrap">
     <span>ID:${u.id} | 用户名:${escapeHtml(u.username)} | 角色:${u.role} | ${u.is_cancel==1?'【已注销】':'正常账号'}</span>
-    <select id="role_${u.id}">
-      <option value="guest">访客 guest</option>
-      <option value="writer">作家 writer</option>
-      <option value="admin">管理员 admin</option>
-      <option value="banned">封禁 banned</option>
+    <select id="role_${u.id}" ${(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')) ? 'disabled' : ''}>
+      ${optionHtml}
     </select>
-    <button class="glass-btn" onclick="saveRole(${u.id})">保存修改</button>
-    <button class="glass-btn" style="background:rgba(255,80,80,0.25)" onclick="delUser(${u.id},'${escapeHtml(u.username)}')">删除用户</button>
+    <button class="glass-btn" onclick="saveRole(${u.id})" ${(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')) ? 'disabled' : ''}>保存修改</button>
+    ${delBtnShow ? `<button class="glass-btn" style="background:rgba(255,80,80,0.25)" onclick="delUser(${u.id},'${escapeHtml(u.username)}')">删除用户</button>` : '<span style="color:#aaa">不可删除</span>'}
   </div>
-  `).join('');
+  `
+  }).join('');
   data.list.forEach(u=>{
-    document.getElementById(`role_${u.id}`).value = u.role;
+    const sel = document.getElementById(`role_${u.id}`);
+    if(sel) sel.value = u.role;
   })
 }
 
