@@ -1,4 +1,4 @@
-﻿async function sha256(rawStr) {
+async function sha256(rawStr) {
   const encoder = new TextEncoder();
   const data = encoder.encode(rawStr);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -109,14 +109,30 @@ export async function onRequest({ request, env }) {
 
     // 管理员修改用户角色
     if (action === 'setRole' && request.method === 'POST') {
-      if (!loginUser || loginUser.role !== 'admin') {
-        return jsonResp({ code:99, msg:'无权操作，仅管理员可用' }, 403);
-      }
+      if (!loginUser) return jsonResp({ code:99, msg:'无权操作，仅管理员可用' }, 403);
       const { targetUid, newRole } = await request.json();
-      const allowRoles = ['admin','writer','guest','banned'];
+      const allowRoles = ['owner','admin','writer','guest','banned'];
       if (!allowRoles.includes(newRole)) {
         return jsonResp({ code:1, msg:'非法角色值' });
       }
+      // 查询目标用户信息
+      const targetUser = await db.prepare(`SELECT id, role FROM users WHERE id = ?`).bind(targetUid).first();
+      if (!targetUser) return jsonResp({ code:1, msg:'用户不存在' });
+
+      // 规则限制
+      // 1. 普通admin 不能操作owner
+      if(loginUser.role === 'admin' && targetUser.role === 'owner'){
+        return jsonResp({ code:98, msg:'无权修改所有者账号权限' },403);
+      }
+      // 2. 普通admin 不能修改其他admin
+      if(loginUser.role === 'admin' && targetUser.role === 'admin'){
+        return jsonResp({ code:98, msg:'管理员无法操作其他管理员账号' },403);
+      }
+      // 3. admin 无法设置别人为owner
+      if(loginUser.role === 'admin' && newRole === 'owner'){
+        return jsonResp({ code:98, msg:'管理员无权授予所有者权限' },403);
+      }
+
       await db.prepare(`UPDATE users SET role = ? WHERE id = ?`)
         .bind(newRole, targetUid).run();
       return jsonResp({ code:0, msg:'角色修改成功' });
@@ -124,7 +140,7 @@ export async function onRequest({ request, env }) {
 
     // 获取全部用户列表（管理员）
     if (action === 'userList' && request.method === 'GET') {
-      if (!loginUser || loginUser.role !== 'admin') {
+      if (!loginUser || loginUser.role === 'guest' || loginUser.role === 'banned') {
         return jsonResp({ code:99, msg:'无权访问' }, 403);
       }
       const allUsers = await db.prepare(`SELECT id, username, role, is_cancel, created_at FROM users ORDER BY id`).all();
@@ -133,25 +149,34 @@ export async function onRequest({ request, env }) {
 
     // 管理员删除用户
     if (action === 'deleteUser' && request.method === 'POST') {
-      if (!loginUser || loginUser.role !== 'admin') {
-        return jsonResp({ code:99, msg:'无权操作，仅管理员可用' }, 403);
+      if (!loginUser || loginUser.role === 'guest' || loginUser.role === 'banned') {
+        return jsonResp({ code:99, msg:'无权操作' }, 403);
       }
       const { targetUid } = await request.json();
       if (Number(targetUid) === loginUser.uid) {
-        return jsonResp({ code:1, msg:'不能删除当前登录管理员账号' });
+        return jsonResp({ code:1, msg:'不能删除当前登录账号' });
+      }
+      const targetUser = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid).first();
+      if(!targetUser) return jsonResp({code:1,msg:'用户不存在'});
+      // admin限制：不能删owner、不能删其他admin
+      if(loginUser.role === 'admin'){
+        if(targetUser.role === 'owner') return jsonResp({code:98,msg:'无法删除所有者账号'},403);
+        if(targetUser.role === 'admin') return jsonResp({code:98,msg:'管理员无法删除其他管理员'},403);
       }
       await db.prepare(`DELETE FROM posts WHERE author_id = ?`).bind(targetUid).run();
       await db.prepare(`DELETE FROM users WHERE id = ?`).bind(targetUid).run();
       return jsonResp({ code:0, msg:'用户删除成功' });
     }
 
-    // ========== 新增1：管理员手动新增用户 ==========
+    // 新增：管理员手动新增用户
     if (action === 'adminAddUser' && request.method === 'POST') {
-      if (!loginUser || loginUser.role !== 'admin') {
+      if (!loginUser || loginUser.role === 'guest' || loginUser.role === 'banned') {
         return jsonResp({ code:99, msg:'仅管理员可创建用户' }, 403);
       }
       const { username, password, role } = await request.json();
       const allowRoles = ['admin','writer','guest','banned'];
+      // 管理员禁止创建owner
+      if (role === 'owner') return jsonResp({ code:1, msg:'管理员无法创建所有者账号' });
       if (!allowRoles.includes(role)) return jsonResp({ code:1, msg:'角色非法' });
       const hashPwd = await sha256(password);
       try {
@@ -163,7 +188,7 @@ export async function onRequest({ request, env }) {
       }
     }
 
-    // ========== 新增2：用户修改密码 ==========
+    // 用户修改密码
     if (action === 'changePwd' && request.method === 'POST') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' },401);
       const { oldPwd, newPwd } = await request.json();
@@ -179,7 +204,7 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code:0, msg:'密码修改成功，请重新登录' });
     }
 
-    // ========== 新增3：用户自助注销账户 ==========
+    // 用户自助注销账户
     if (action === 'cancelAccount' && request.method === 'POST') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' },401);
       const { password } = await request.json();
@@ -189,9 +214,7 @@ export async function onRequest({ request, env }) {
       if (!userRow || userRow.password !== pwdHash) {
         return jsonResp({ code:1, msg:'密码验证失败，无法注销' });
       }
-      // 标记注销，不删除文章，文章作者自动显示注销
       await db.prepare(`UPDATE users SET is_cancel=1 WHERE id=?`).bind(loginUser.uid).run();
-      // 清空登录Cookie
       return new Response(JSON.stringify({ code:0, msg:'账户注销成功' }), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
