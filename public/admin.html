@@ -79,7 +79,6 @@ async function loadUserList(){
     // owner 只能所有者自己修改，admin看不到owner选项
     if(myRole === 'owner'){
       optionHtml = `
-        <option value="owner">所有者 owner</option>
         <option value="admin">管理员 admin</option>
         <option value="writer">作家 writer</option>
         <option value="guest">访客 guest</option>
