@@ -1,4 +1,4 @@
-﻿function jsonResp(data, status = 200) {
+function jsonResp(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8' }
@@ -81,7 +81,8 @@ export async function onRequest({ request, env }) {
     // 新建文章（支持定时发布 publishTime）
     if (request.method === 'POST' && action === 'create') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
-      const allowPostRole = ['admin','writer'];
+      // 新增 owner 角色可发布文章
+      const allowPostRole = ['admin','writer','owner'];
       if (!allowPostRole.includes(loginUser.role)) {
         return jsonResp({ code:98, msg:'当前身份不能发布文章' }, 403);
       }
@@ -103,8 +104,8 @@ export async function onRequest({ request, env }) {
 
       if (!post) return jsonResp({ code:1, msg:'文章不存在' });
 
-      // 仅作者和管理员可编辑
-      if (loginUser.role !== 'admin' && post.author_id !== loginUser.uid) {
+      // admin/owner/文章作者均可编辑
+      if (loginUser.role !== 'admin' && loginUser.role !== 'owner' && post.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权限编辑' }, 403);
       }
 
@@ -121,7 +122,8 @@ export async function onRequest({ request, env }) {
       const postInfo = await db.prepare(`SELECT author_id FROM posts WHERE id = ?`).bind(postId).first();
       if (!postInfo) return jsonResp({ code:1, msg:'文章不存在' });
 
-      if (loginUser.role !== 'admin' && postInfo.author_id !== loginUser.uid) {
+      // admin/owner/文章作者均可删除
+      if (loginUser.role !== 'admin' && loginUser.role !== 'owner' && postInfo.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权删除他人文章' }, 403);
       }
       await db.prepare(`DELETE FROM posts WHERE id = ?`).bind(postId).run();
@@ -172,7 +174,8 @@ export async function onRequest({ request, env }) {
       const { commentId } = await request.json();
       const cmInfo = await db.prepare(`SELECT user_id FROM comments WHERE id = ?`).bind(commentId).first();
       if(!cmInfo) return jsonResp({code:1, msg:'评论不存在'});
-      if(loginUser.role !== 'admin' && cmInfo.user_id !== loginUser.uid){
+      // admin、owner、评论本人可删评论
+      if(loginUser.role !== 'admin' && loginUser.role !== 'owner' && cmInfo.user_id !== loginUser.uid){
         return jsonResp({code:98, msg:'无权删除这条评论'}, 403);
       }
       await db.prepare(`DELETE FROM comments WHERE id = ?`).bind(commentId).run();
