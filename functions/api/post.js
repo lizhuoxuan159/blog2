@@ -100,7 +100,7 @@ export async function onRequest({ request, env }) {
       if (!allowPostRole.includes(loginUser.role)) {
         return jsonResp({ code:98, msg:'当前身份不能发布文章' }, 403);
       }
-      const { title, content, publishTime, publish = 0 } = await request.json();
+      const { title, content, publishTime, publish = 1 } = await request.json();
       if (!title || !content) return jsonResp({ code:1, msg:'标题和内容不能为空' });
       let finalPublishTime = null;
       // 修复变量名：publishingTime → publishTime
