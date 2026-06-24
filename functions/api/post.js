@@ -35,14 +35,14 @@ export async function onRequest({ request, env }) {
     const action = url.searchParams.get('action');
     const loginUser = await getLoginUser(request);
 
-    // 文章列表 - 前台只查已发布，后台查全部
+    // 文章列表 - 未登录/普通用户看所有人已发布；admin/owner看全部（草稿+发布）
     if (request.method === 'GET' && action === 'list') {
       const isAdmin = loginUser && ['admin','owner'].includes(loginUser.role);
       let sql = `
         SELECT p.id, p.title, p.content, p.created_at, p.publish_time, p.publish, u.username, u.role, u.is_cancel, p.author_id
         FROM posts p LEFT JOIN users u ON p.author_id = u.id
       `;
-      // 非管理员只展示已发布
+      // 非管理员（游客、writer）仅展示已发布文章，可查看所有人
       if(!isAdmin){
         sql += ` WHERE p.publish = 1 `;
       }
@@ -74,7 +74,7 @@ export async function onRequest({ request, env }) {
       if (!row) {
         return jsonResp({ notFound: true }, 404);
       }
-      // 草稿仅作者/管理员可见
+      // 草稿仅作者/管理员/owner可见；已发布所有人可看
       const isSelf = loginUser && loginUser.uid === row.author_id;
       const isAdmin = loginUser && ['admin','owner'].includes(loginUser.role);
       if(row.publish === 0 && !isSelf && !isAdmin){
@@ -93,20 +93,26 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 新建文章
+    // 新建文章（owner/admin/writer允许发布）
     if (request.method === 'POST' && action === 'create') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
+      const allowPostRole = ['admin','writer','owner'];
+      if (!allowPostRole.includes(loginUser.role)) {
+        return jsonResp({ code:98, msg:'当前身份不能发布文章' }, 403);
+      }
       const { title, content, publishTime, publish = 0 } = await request.json();
       if (!title || !content) return jsonResp({ code:1, msg:'标题和内容不能为空' });
       let finalPublishTime = null;
+      // 修复变量名：publishingTime → publishTime
       if (publishTime) {
         finalPublishTime = publishTime;
       } else if (publish === 1) {
         finalPublishTime = new Date().toISOString();
       }
+      // 补全created_at避免数据库非空报错
       await db.prepare(`
-        INSERT INTO posts (title, content, author_id, publish_time, publish) 
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO posts (title, content, author_id, publish_time, publish, created_at) 
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `).bind(title, content, loginUser.uid, finalPublishTime, publish).run();
       return jsonResp({ code:0, msg:'保存成功' });
     }
@@ -124,6 +130,7 @@ export async function onRequest({ request, env }) {
       if (loginUser.role !== 'admin' && loginUser.role !== 'owner' && post.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权限编辑' }, 403);
       }
+      // 修复变量名 publishing → publish
       if (publish === 1) {
         await db.prepare(`
           UPDATE posts 
@@ -155,7 +162,7 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code:0, msg:'删除成功' });
     }
 
-    // 切换草稿/发布状态（已修复变量名错误）
+    // 切换草稿/发布状态
     if(request.method === 'POST' && action === 'changePublish'){
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const { postId, publish } = await request.json();
@@ -164,6 +171,7 @@ export async function onRequest({ request, env }) {
       if (loginUser.role !== 'admin' && loginUser.role !== 'owner' && post.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权限操作' }, 403);
       }
+      // 修复变量名 publishing → publish
       if (publish === 1) {
         await db.prepare(`UPDATE posts SET publish = ?, publish_time = ? WHERE id = ?`)
           .bind(publish, new Date().toISOString(), postId).run();
@@ -232,6 +240,7 @@ export async function onRequest({ request, env }) {
 
     return jsonResp({ code:99, msg:'接口不存在' }, 404);
   } catch (e) {
-    return jsonResp({ code:500, msg:'服务器错误'+e, err:e.message }, 500);
+    console.error("接口捕获异常：", e);
+    return jsonResp({ code:500, msg:'服务器错误：' + e.message, err:e.message }, 500);
   }
 }
