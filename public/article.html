@@ -150,7 +150,7 @@ async function loadDetail(){
   const editBtn = document.getElementById('editPostBtn');
 
   // 作者或管理员显示编辑/删除
-  const canManage = currentLoginRole === 'admin' ||currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId);
+  const canManage = currentLoginRole === 'owner' ||currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId);
   if(canManage){
     editBtn.style.display = 'inline-block';
     delBtn.style.display = 'inline-block';
