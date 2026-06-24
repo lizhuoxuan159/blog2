@@ -103,15 +103,13 @@ export async function onRequest({ request, env }) {
       const { title, content, publishTime, publish = 1 } = await request.json();
       if (!title || !content) return jsonResp({ code:1, msg:'标题和内容不能为空' });
       let finalPublishTime = null;
-      // 修复变量名：publishingTime → publishTime
       if (publishTime) {
         finalPublishTime = publishTime;
       } else if (publish === 1) {
         finalPublishTime = new Date().toISOString();
       }
-      // 补全created_at避免数据库非空报错
       await db.prepare(`
-        INSERT INTO posts (title, content, author_id, publish_time, publish, created_at) 
+        INSERT INTO posts (title, content, author_id, publish_time, publish, created_at) 
         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       `).bind(title, content, loginUser.uid, finalPublishTime, publish).run();
       return jsonResp({ code:0, msg:'保存成功' });
@@ -130,17 +128,17 @@ export async function onRequest({ request, env }) {
       if (loginUser.role !== 'admin' && loginUser.role !== 'owner' && post.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权限编辑' }, 403);
       }
-      // 修复变量名 publishing → publish
+      // 修复：原代码变量名publish不存在，替换为publish
       if (publish === 1) {
         await db.prepare(`
-          UPDATE posts 
-          SET title = ?, content = ?, publish = ?, publish_time = ? 
+          UPDATE posts 
+          SET title = ?, content = ?, publish = ?, publish_time = ? 
           WHERE id = ?
         `).bind(title, content, publish, new Date().toISOString(), postId).run();
       } else {
         await db.prepare(`
-          UPDATE posts 
-          SET title = ?, content = ?, publish = ? 
+          UPDATE posts 
+          SET title = ?, content = ?, publish = ? 
           WHERE id = ?
         `).bind(title, content, publish, postId).run();
       }
@@ -171,7 +169,7 @@ export async function onRequest({ request, env }) {
       if (loginUser.role !== 'admin' && loginUser.role !== 'owner' && post.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权限操作' }, 403);
       }
-      // 修复变量名 publishing → publish
+      // 修复：原代码publish变量不存在，替换为publish
       if (publish === 1) {
         await db.prepare(`UPDATE posts SET publish = ?, publish_time = ? WHERE id = ?`)
           .bind(publish, new Date().toISOString(), postId).run();
