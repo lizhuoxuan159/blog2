@@ -81,11 +81,6 @@ export async function onRequest({ request, env }) {
     // 新建文章（支持定时发布 publishTime）
     if (request.method === 'POST' && action === 'create') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
-      // 新增 owner 角色可发布文章
-      const allowPostRole = ['admin','writer','owner'];
-      if (!allowPostRole.includes(loginUser.role)) {
-        return jsonResp({ code:98, msg:'当前身份不能发布文章' }, 403);
-      }
       const { title, content, publishTime } = await request.json();
       if (!title || !content) return jsonResp({ code:1, msg:'标题和内容不能为空' });
       const finalPublish = publishTime || new Date().toISOString();
