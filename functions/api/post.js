@@ -71,9 +71,9 @@ export async function onRequest({ request, env }) {
         SELECT p.*, u.username, u.is_cancel FROM posts p
         LEFT JOIN users u ON p.author_id = u.id WHERE p.id = ?
       `).bind(id).first();
-	  if (!row) {
-    		return jsonResp({ notFound: true }, 404);
-  	  }
+      if (!row) {
+        return jsonResp({ notFound: true }, 404);
+      }
       // 草稿仅作者/管理员可见
       const isSelf = loginUser && loginUser.uid === row.author_id;
       const isAdmin = loginUser && ['admin','owner'].includes(loginUser.role);
@@ -93,20 +93,25 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 新建文章 新增publish状态
+    // 新建文章
     if (request.method === 'POST' && action === 'create') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const { title, content, publishTime, publish = 0 } = await request.json();
       if (!title || !content) return jsonResp({ code:1, msg:'标题和内容不能为空' });
-      const finalPublish = publishTime || new Date().toISOString();
+      let finalPublishTime = null;
+      if (publishTime) {
+        finalPublishTime = publishTime;
+      } else if (publish === 1) {
+        finalPublishTime = new Date().toISOString();
+      }
       await db.prepare(`
         INSERT INTO posts (title, content, author_id, publish_time, publish) 
         VALUES (?, ?, ?, ?, ?)
-      `).bind(title, content, loginUser.uid, finalPublish, publish).run();
+      `).bind(title, content, loginUser.uid, finalPublishTime, publish).run();
       return jsonResp({ code:0, msg:'保存成功' });
     }
 
-    // 编辑文章 同步修改publish状态
+    // 编辑文章
     if (request.method === 'POST' && action === 'edit') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const { postId, title, content, publish } = await request.json();
@@ -119,9 +124,19 @@ export async function onRequest({ request, env }) {
       if (loginUser.role !== 'admin' && loginUser.role !== 'owner' && post.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权限编辑' }, 403);
       }
-
-      await db.prepare("UPDATE posts SET title = ?, content = ?, publish = ? WHERE id = ?")
-        .bind(title, content, publish, postId).run();
+      if (publish === 1) {
+        await db.prepare(`
+          UPDATE posts 
+          SET title = ?, content = ?, publish = ?, publish_time = ? 
+          WHERE id = ?
+        `).bind(title, content, publish, new Date().toISOString(), postId).run();
+      } else {
+        await db.prepare(`
+          UPDATE posts 
+          SET title = ?, content = ?, publish = ? 
+          WHERE id = ?
+        `).bind(title, content, publish, postId).run();
+      }
 
       return jsonResp({ code:0, msg:'修改成功' });
     }
@@ -140,7 +155,7 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code:0, msg:'删除成功' });
     }
 
-    // 切换草稿/发布状态 单独接口
+    // 切换草稿/发布状态（已修复变量名错误）
     if(request.method === 'POST' && action === 'changePublish'){
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const { postId, publish } = await request.json();
@@ -149,7 +164,13 @@ export async function onRequest({ request, env }) {
       if (loginUser.role !== 'admin' && loginUser.role !== 'owner' && post.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权限操作' }, 403);
       }
-      await db.prepare("UPDATE posts SET publish = ? WHERE id = ?").bind(publish,postId).run();
+      if (publish === 1) {
+        await db.prepare(`UPDATE posts SET publish = ?, publish_time = ? WHERE id = ?`)
+          .bind(publish, new Date().toISOString(), postId).run();
+      } else {
+        await db.prepare(`UPDATE posts SET publish = ? WHERE id = ?`)
+          .bind(publish, postId).run();
+      }
       return jsonResp({code:0,msg:publish===1?'已设为发布':'已设为草稿'});
     }
 
@@ -182,8 +203,8 @@ export async function onRequest({ request, env }) {
       if (!loginUser) return jsonResp({ code:99, msg:'请登录后发表评论' }, 401);
       const banRole = ['banned'];
       if(banRole.includes(loginUser.role)){
-  		return jsonResp({ code:98, msg:'封禁账号无法发表评论' }, 403);
-	  }
+        return jsonResp({ code:98, msg:'封禁账号无法发表评论' }, 403);
+      }
       const { postId, content } = await request.json();
       if(!content.trim()) return jsonResp({code:1, msg:'评论内容不能为空'});
       // 禁止给草稿文章评论
