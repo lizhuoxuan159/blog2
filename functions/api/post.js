@@ -181,6 +181,6 @@ export async function onRequest({ request, env }) {
     return jsonResp({ code:99, msg:'接口不存在' }, 404);
   } catch (e) {
     // 全局异常捕获，统一500返回
-    return jsonResp({ code:500, msg:'服务器错误', err:e.message }, 500);
+    return jsonResp({ code:500, msg:'服务器错误'+e, err:e.message }, 500);
   }
 }
