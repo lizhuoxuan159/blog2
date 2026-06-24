@@ -82,7 +82,7 @@ async function loadPosts(){
     <p style="opacity:0.8;margin:6px 0">作者：${escapeHtml(p.authorName)} | ${p.created_at}</p>
     <p>${escapeHtml(p.content.slice(0,80))}...</p>
     ${
-      (currentUser?.role==='admin' || (currentUser?.uid === p.author_id))
+      (currentUser?.role==='admin' || currentUser?.role==='owner'|| (currentUser?.uid === p.author_id))
       ?`<button class="glass-btn" style="position:absolute;right:15px;bottom:15px;background:rgba(255,80,80,0.25)" onclick="event.stopPropagation();delPostIndex(${p.id})">删除</button>`
       :''
     }
