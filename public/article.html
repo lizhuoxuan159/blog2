@@ -213,9 +213,10 @@ async function loadCommentList(){
   let html = '';
   cmList.forEach(cm=>{
     let showDelBtn = false;
-    if(currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === cm.userId)){
-      showDelBtn = true;
-    }
+    let showDelBtn = false;
+   if(['admin','owner'].includes(currentLoginRole) || (currentLoginUid && currentLoginUid === cm.userId)){
+  showDelBtn = true;
+}
     html += `
     <div class="comment-item">
       <div style="display:flex;justify-content:space-between;align-items:center">
