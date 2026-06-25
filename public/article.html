@@ -149,8 +149,8 @@ async function loadDetail(){
   const delBtn = document.getElementById('delPostBtn');
   const editBtn = document.getElementById('editPostBtn');
 
-  // 作者或管理员显示编辑/删除
-  const canManage = currentLoginRole === 'owner' ||currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId);
+  // owner / admin / 文章作者 显示编辑删除按钮
+  const canManage = currentLoginRole === 'owner' || currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId);
   if(canManage){
     editBtn.style.display = 'inline-block';
     delBtn.style.display = 'inline-block';
@@ -213,10 +213,10 @@ async function loadCommentList(){
   let html = '';
   cmList.forEach(cm=>{
     let showDelBtn = false;
-    let showDelBtn = false;
-   if(['admin','owner'].includes(currentLoginRole) || (currentLoginUid && currentLoginUid === cm.userId)){
-  showDelBtn = true;
-}
+    // 修复：owner和admin都能删除全部评论，本人删自己评论
+    if(['admin','owner'].includes(currentLoginRole) || (currentLoginUid && currentLoginUid === cm.userId)){
+      showDelBtn = true;
+    }
     html += `
     <div class="comment-item">
       <div style="display:flex;justify-content:space-between;align-items:center">
