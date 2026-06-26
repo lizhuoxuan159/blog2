@@ -40,6 +40,20 @@
       color:#fff;
       border:1px solid #ccc;
     }
+    .author-name {
+      cursor: pointer;
+      color: #667eea;
+    }
+    .author-name:hover {
+      text-decoration: underline;
+    }
+    .comment-user {
+      cursor: pointer;
+      color: #667eea;
+    }
+    .comment-user:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -85,13 +99,26 @@ let postId = new URLSearchParams(location.search).get('id');
 let currentLoginUid = null;
 let currentLoginRole = null;
 let postAuthorId = null;
+let postAuthorName = '';
 let currentTitle = '';
 let currentContent = '';
-let currentPublish = null;  // 新增：保存当前文章发布状态
 
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace( />/g,'&gt;');
+}
+
+// 跳转到私信
+function goPrivate(userId, userName) {
+  if (!currentLoginUid) {
+    alert('请先登录');
+    return;
+  }
+  if (userId === currentLoginUid) {
+    alert('不能给自己发私信哦');
+    return;
+  }
+  location.href = `/private.html?userId=${userId}&userName=${encodeURIComponent(userName)}`;
 }
 
 async function checkLoginState(){
@@ -133,14 +160,18 @@ async function loadDetail(){
     return;
   }
   postAuthorId = data.author_id;
+  postAuthorName = data.displayAuthor;
   currentTitle = data.title;
   currentContent = data.content;
-  currentPublish = data.publish;  // 新增：保存当前发布状态
   let authorName = data.displayAuthor;
+  
   document.getElementById('postTitle').innerText = data.title;
-  document.getElementById('postInfo').innerText = `作者：${authorName} | ${data.created_at}`;
+  document.getElementById('postInfo').innerHTML = 
+    `作者：<span class="author-name" onclick="goPrivate(${data.author_id}, '${escapeHtml(authorName)}')" title="点击发私信">${escapeHtml(authorName)}</span> | ${data.created_at}`;
   document.getElementById('postContent').innerText = data.content;
+  
   await checkLoginState();
+  
   const delBtn = document.getElementById('delPostBtn');
   const editBtn = document.getElementById('editPostBtn');
   // owner / admin / 文章作者 显示编辑删除按钮
@@ -158,13 +189,11 @@ function openEdit(){
   document.getElementById('editContent').value = currentContent;
   document.getElementById('editModal').style.display = 'flex';
 }
-
 // 关闭编辑
 function closeEdit(){
   document.getElementById('editModal').style.display = 'none';
 }
-
-// 保存编辑（修复：传递 publish 状态）
+// 保存编辑
 async function saveEdit(){
   const title = document.getElementById('editTitle').value.trim();
   const content = document.getElementById('editContent').value.trim();
@@ -175,12 +204,7 @@ async function saveEdit(){
   const res = await fetch('/api/post?action=edit',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ 
-      postId, 
-      title, 
-      content,
-      publish: currentPublish  // 修复：传递当前文章的发布状态
-    })
+    body:JSON.stringify({ postId, title, content })
   });
   const ret = await res.json();
   alert(ret.msg);
@@ -220,7 +244,10 @@ async function loadCommentList(){
     html += `
     <div class="comment-item">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span>${escapeHtml(cm.userName)} · ${cm.createTime}</span>
+        <span>
+          <span class="comment-user" onclick="goPrivate(${cm.userId}, '${escapeHtml(cm.userName)}')" title="点击发私信">${escapeHtml(cm.userName)}</span>
+          · ${cm.createTime}
+        </span>
         ${showDelBtn ? `<button class="glass-btn cm-del-btn" onclick="delComment(${cm.id})">删除</button>` : ''}
       </div>
       <p style="margin:8px 0;white-space:pre-wrap">${escapeHtml(cm.content)}</p>
