@@ -1,4 +1,4 @@
-function jsonResp(data, status = 200) {
+﻿function jsonResp(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8' }
@@ -117,32 +117,40 @@ export async function onRequest({ request, env }) {
     }
 
     // 编辑文章
+        // 编辑文章
     if (request.method === 'POST' && action === 'edit') {
       if (!loginUser) return jsonResp({ code:99, msg:'请先登录' }, 401);
       const { postId, title, content, publish } = await request.json();
-
-      const post = await db.prepare("SELECT author_id FROM posts WHERE id = ?")
+      
+      // 先查询文章当前状态
+      const post = await db.prepare("SELECT author_id, publish FROM posts WHERE id = ?")
         .bind(postId).first();
-
       if (!post) return jsonResp({ code:1, msg:'文章不存在' });
-
+      
       if (loginUser.role !== 'admin' && loginUser.role !== 'owner' && post.author_id !== loginUser.uid) {
         return jsonResp({ code:98, msg:'无权限编辑' }, 403);
       }
-      if (publish === 1) {
+      
+      // 确定最终的 publish 状态：前端传了就用前端的，没传就保留原值
+      const finalPublish = (publish !== undefined && publish !== null) ? publish : post.publish;
+      
+      // 判断是否需要更新发布时间：从草稿变为发布时才更新
+      const needUpdatePublishTime = (post.publish === 0 && finalPublish === 1);
+      
+      if (needUpdatePublishTime) {
         await db.prepare(`
           UPDATE posts
           SET title = ?, content = ?, publish = ?, publish_time = ?
           WHERE id = ?
-        `).bind(title, content, publish, new Date().toISOString(), postId).run();
+        `).bind(title, content, finalPublish, new Date().toISOString(), postId).run();
       } else {
         await db.prepare(`
           UPDATE posts
           SET title = ?, content = ?, publish = ?
           WHERE id = ?
-        `).bind(title, content, publish, postId).run();
+        `).bind(title, content, finalPublish, postId).run();
       }
-
+      
       return jsonResp({ code:0, msg:'修改成功' });
     }
 

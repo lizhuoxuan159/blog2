@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -49,14 +49,12 @@
     <button id="editPostBtn" class="glass-btn" style="margin-left:10px;display:none">编辑文章</button>
     <button id="delPostBtn" class="glass-btn" style="background:rgba(255,80,80,0.25);margin-left:10px;display:none" onclick="deleteArticle()">删除此文</button>
   </div>
-
   <div class="glass" style="max-width:600px;margin:0 auto">
     <h2 id="postTitle"></h2>
     <p id="postInfo" style="opacity:0.8;margin:8px 0"></p>
     <hr>
     <div id="postContent"></div>
   </div>
-
   <!-- 编辑弹窗 -->
   <div class="edit-modal" id="editModal">
     <div class="edit-box">
@@ -69,7 +67,6 @@
       </div>
     </div>
   </div>
-
   <!-- 评论区域 -->
   <div class="glass" style="max-width:600px;margin:30px auto">
     <h3>评论区</h3>
@@ -83,7 +80,6 @@
     <div id="commentList"></div>
   </div>
 </div>
-
 <script>
 let postId = new URLSearchParams(location.search).get('id');
 let currentLoginUid = null;
@@ -91,10 +87,11 @@ let currentLoginRole = null;
 let postAuthorId = null;
 let currentTitle = '';
 let currentContent = '';
+let currentPublish = null;  // 新增：保存当前文章发布状态
 
 function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace( />/g,'&gt;');
 }
 
 async function checkLoginState(){
@@ -138,24 +135,20 @@ async function loadDetail(){
   postAuthorId = data.author_id;
   currentTitle = data.title;
   currentContent = data.content;
-
+  currentPublish = data.publish;  // 新增：保存当前发布状态
   let authorName = data.displayAuthor;
   document.getElementById('postTitle').innerText = data.title;
   document.getElementById('postInfo').innerText = `作者：${authorName} | ${data.created_at}`;
   document.getElementById('postContent').innerText = data.content;
-
   await checkLoginState();
-
   const delBtn = document.getElementById('delPostBtn');
   const editBtn = document.getElementById('editPostBtn');
-
   // owner / admin / 文章作者 显示编辑删除按钮
   const canManage = currentLoginRole === 'owner' || currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId);
   if(canManage){
     editBtn.style.display = 'inline-block';
     delBtn.style.display = 'inline-block';
   }
-
   loadCommentList();
 }
 
@@ -165,11 +158,13 @@ function openEdit(){
   document.getElementById('editContent').value = currentContent;
   document.getElementById('editModal').style.display = 'flex';
 }
+
 // 关闭编辑
 function closeEdit(){
   document.getElementById('editModal').style.display = 'none';
 }
-// 保存编辑
+
+// 保存编辑（修复：传递 publish 状态）
 async function saveEdit(){
   const title = document.getElementById('editTitle').value.trim();
   const content = document.getElementById('editContent').value.trim();
@@ -180,7 +175,12 @@ async function saveEdit(){
   const res = await fetch('/api/post?action=edit',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ postId, title, content })
+    body:JSON.stringify({ 
+      postId, 
+      title, 
+      content,
+      publish: currentPublish  // 修复：传递当前文章的发布状态
+    })
   });
   const ret = await res.json();
   alert(ret.msg);
@@ -264,7 +264,6 @@ async function delComment(cmId){
 
 // 绑定编辑按钮
 document.getElementById('editPostBtn').onclick = openEdit;
-
 loadDetail();
 </script>
 </body>
