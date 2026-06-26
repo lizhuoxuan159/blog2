@@ -253,7 +253,171 @@ export async function onRequest({ request, env }) {
 
       return jsonResp({ code: 0, msg: '删除成功' });
     }
+    // ==================== 私聊相关 ====================
 
+    // 获取会话列表
+    if (request.method === 'GET' && action === 'conversationList') {
+      if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
+
+      const uid = loginUser.uid;
+      
+      // 找出所有和当前用户聊过天的用户，以及最后一条消息
+      const rawConversations = await db.prepare(`
+        SELECT 
+          CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as other_user_id,
+          MAX(id) as last_msg_id
+        FROM private_messages
+        WHERE sender_id = ? OR receiver_id = ?
+        GROUP BY other_user_id
+        ORDER BY last_msg_id DESC
+      `).bind(uid, uid, uid).all();
+
+      const conversations = [];
+      for (const conv of rawConversations.results) {
+        // 获取最后一条消息
+        const lastMsg = await db.prepare(`
+          SELECT content, created_at, sender_id, is_read
+          FROM private_messages
+          WHERE id = ?
+        `).bind(conv.last_msg_id).first();
+
+        // 获取对方用户信息
+        const otherUser = await db.prepare(`
+          SELECT username, role, is_cancel
+          FROM users
+          WHERE id = ?
+        `).bind(conv.other_user_id).first();
+
+        // 计算未读数
+        const unreadRes = await db.prepare(`
+          SELECT COUNT(*) as count
+          FROM private_messages
+          WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
+        `).bind(conv.other_user_id, uid).first();
+
+        let displayName = otherUser?.username || '未知用户';
+        if (otherUser?.is_cancel === 1) displayName = '账户已注销';
+
+        conversations.push({
+          userId: conv.other_user_id,
+          userName: displayName,
+          userRole: otherUser?.role,
+          lastMessage: lastMsg?.content || '',
+          lastTime: toUTC8Time(lastMsg?.created_at),
+          unreadCount: unreadRes?.count || 0,
+          isLastFromMe: lastMsg?.sender_id === uid
+        });
+      }
+
+      return jsonResp(conversations);
+    }
+
+    // 获取和某人的聊天记录
+    if (request.method === 'GET' && action === 'getPrivateMessages') {
+      if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
+
+      const otherUserId = parseInt(url.searchParams.get('userId'));
+      if (!otherUserId) return jsonResp({ code: 1, msg: '参数错误' });
+
+      const uid = loginUser.uid;
+      const limit = parseInt(url.searchParams.get('limit')) || 50;
+
+      // 获取消息（最新的50条，然后倒序）
+      const rawMsgs = await db.prepare(`
+        SELECT id, sender_id, receiver_id, content, is_read, created_at
+        FROM private_messages
+        WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+        ORDER BY id DESC
+        LIMIT ?
+      `).bind(uid, otherUserId, otherUserId, uid, limit).all();
+
+      // 标记为已读（对方发的消息）
+      await db.prepare(`
+        UPDATE private_messages
+        SET is_read = 1
+        WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
+      `).bind(otherUserId, uid).run();
+
+      // 倒序排列（最新的在下面）
+      const messages = rawMsgs.results.reverse().map(msg => ({
+        id: msg.id,
+        content: msg.content,
+        isMe: msg.sender_id === uid,
+        createTime: toUTC8Time(msg.created_at),
+        isRead: msg.is_read
+      }));
+
+      return jsonResp(messages);
+    }
+
+    // 发送私聊消息
+    if (request.method === 'POST' && action === 'sendPrivate') {
+      if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
+
+      const banRole = ['banned'];
+      if (banRole.includes(loginUser.role)) {
+        return jsonResp({ code: 98, msg: '封禁账号无法发送消息' }, 403);
+      }
+
+      const { userId, content } = await request.json();
+      if (!userId || !content || !content.trim()) {
+        return jsonResp({ code: 1, msg: '参数错误' });
+      }
+      if (content.length > 500) {
+        return jsonResp({ code: 2, msg: '消息不能超过500字' });
+      }
+
+      // 检查对方用户是否存在
+      const receiver = await db.prepare(`
+        SELECT id, is_cancel FROM users WHERE id = ?
+      `).bind(userId).first();
+      if (!receiver) return jsonResp({ code: 1, msg: '用户不存在' });
+      if (receiver.is_cancel === 1) return jsonResp({ code: 1, msg: '对方账户已注销' });
+
+      // 不能给自己发消息
+      if (userId === loginUser.uid) {
+        return jsonResp({ code: 1, msg: '不能给自己发消息' });
+      }
+
+      const result = await db.prepare(`
+        INSERT INTO private_messages (sender_id, receiver_id, content)
+        VALUES (?, ?, ?)
+      `).bind(loginUser.uid, userId, content.trim()).run();
+
+      return jsonResp({ 
+        code: 0, 
+        msg: '发送成功',
+        id: result.meta.last_row_id,
+        createTime: toUTC8Time(new Date().toISOString())
+      });
+    }
+
+    // 获取未读消息总数
+    if (request.method === 'GET' && action === 'getUnreadCount') {
+      if (!loginUser) return jsonResp({ total: 0 });
+
+      const res = await db.prepare(`
+        SELECT COUNT(*) as total
+        FROM private_messages
+        WHERE receiver_id = ? AND is_read = 0
+      `).bind(loginUser.uid).first();
+
+      return jsonResp({ total: res?.total || 0 });
+    }
+
+    // 标记会话已读
+    if (request.method === 'POST' && action === 'markRead') {
+      if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
+
+      const { userId } = await request.json();
+      await db.prepare(`
+        UPDATE private_messages
+        SET is_read = 1
+        WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
+      `).bind(userId, loginUser.uid).run();
+
+      return jsonResp({ code: 0, msg: '已标记为已读' });
+    }
     return jsonResp({ code: 99, msg: '接口不存在' }, 404);
   } catch (e) {
     console.error("聊天接口捕获异常：", e);
