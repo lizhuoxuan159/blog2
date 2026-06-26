@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -41,6 +41,23 @@
       opacity: 0.9;
     }
     .navbar a:hover { opacity: 1; }
+    .nav-right {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+    .new-chat-btn {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .new-chat-btn:hover {
+      background: rgba(255,255,255,0.3);
+    }
 
     /* 主容器 */
     .main-container {
@@ -65,6 +82,23 @@
       font-weight: 600;
       font-size: 15px;
       color: #2c3e50;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sidebar-header .add-btn {
+      background: #3498db;
+      color: white;
+      border: none;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+    }
+    .sidebar-header .add-btn:hover {
+      background: #2980b9;
     }
     .conversation-list {
       flex: 1;
@@ -241,6 +275,24 @@
       font-size: 48px;
       margin-bottom: 12px;
     }
+    .empty-state .tip {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #ccc;
+    }
+    .empty-state .start-btn {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background: #3498db;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .empty-state .start-btn:hover {
+      background: #2980b9;
+    }
 
     /* 输入框 */
     .input-area {
@@ -290,10 +342,83 @@
       text-align: center;
       padding: 60px 20px;
       color: #7f8c8d;
+      width: 100%;
     }
     .login-tip a {
       color: #3498db;
       text-decoration: none;
+    }
+
+    /* 弹窗 */
+    .modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .modal.show { display: flex; }
+    .modal-box {
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 400px;
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #2c3e50;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-label {
+      display: block;
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 6px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+    }
+    .form-input:focus {
+      border-color: #3498db;
+    }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn-default {
+      background: #ecf0f1;
+      color: #7f8c8d;
+    }
+    .btn-default:hover {
+      background: #dfe4e6;
+    }
+    .btn-primary {
+      background: #3498db;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #2980b9;
     }
 
     /* 响应式 */
@@ -328,14 +453,21 @@
       <button class="back-btn" onclick="showSidebar()">←</button>
       <h1>💬 私信</h1>
     </div>
-    <a href="/chat.html">🐮 犇犇广场</a>
+    <div class="nav-right">
+      <button class="new-chat-btn" onclick="openNewChatModal()">+ 发起新聊天</button>
+      <a href="/chat.html">🐮 犇犇</a>
+      <a href="/index.html">首页</a>
+    </div>
   </div>
 </div>
 
 <div class="main-container">
   <!-- 左侧会话列表 -->
   <div class="sidebar" id="sidebar">
-    <div class="sidebar-header">会话列表</div>
+    <div class="sidebar-header">
+      <span>会话列表</span>
+      <button class="add-btn" onclick="openNewChatModal()" title="发起新聊天">+</button>
+    </div>
     <div class="conversation-list" id="conversationList">
       <p style="text-align:center;color:#bbb;padding:40px;font-size:13px">加载中...</p>
     </div>
@@ -346,6 +478,8 @@
     <div class="empty-state" id="emptyState">
       <div class="icon">💬</div>
       <p>选择一个会话开始聊天</p>
+      <p class="tip">或者从犇犇广场点击用户头像发起</p>
+      <button class="start-btn" onclick="openNewChatModal()">发起新聊天</button>
     </div>
     
     <div id="chatContent" style="display:none;flex-direction:column;height:100%">
@@ -360,6 +494,28 @@
           <button class="send-btn" onclick="sendMessage()">发送</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 发起新聊天弹窗 -->
+<div class="modal" id="newChatModal">
+  <div class="modal-box">
+    <div class="modal-title">💬 发起新聊天</div>
+    
+    <div class="form-group">
+      <label class="form-label">对方用户ID</label>
+      <input type="number" class="form-input" id="newChatUserId" placeholder="输入用户ID">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">对方用户名（可选）</label>
+      <input type="text" class="form-input" id="newChatUserName" placeholder="输入用户名（用于显示）">
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeNewChatModal()">取消</button>
+      <button class="btn btn-primary" onclick="startNewChat()">开始聊天</button>
     </div>
   </div>
 </div>
@@ -386,9 +542,10 @@ async function checkLoginState() {
       currentLoginUser = data;
       loadConversations();
       startRefresh();
+      checkUrlParams();
     } else {
       document.querySelector('.main-container').innerHTML = `
-        <div class="login-tip" style="width:100%">
+        <div class="login-tip">
           <h3>请先登录</h3>
           <p style="margin-top:10px"><a href="/login.html">去登录</a></p>
         </div>
@@ -396,6 +553,17 @@ async function checkLoginState() {
     }
   } catch (e) {
     console.error('检查登录状态失败', e);
+  }
+}
+
+function checkUrlParams() {
+  const params = new URLSearchParams(location.search);
+  const userId = params.get('userId');
+  const userName = params.get('userName');
+  if (userId && userName) {
+    setTimeout(() => {
+      openChat(parseInt(userId), decodeURIComponent(userName));
+    }, 300);
   }
 }
 
@@ -407,7 +575,12 @@ async function loadConversations() {
     const wrap = document.getElementById('conversationList');
     
     if (list.length === 0) {
-      wrap.innerHTML = '<p style="text-align:center;color:#bbb;padding:40px;font-size:13px">暂无会话<br><br>去犇犇广场找人聊天吧~</p>';
+      wrap.innerHTML = `
+        <div style="text-align:center;color:#bbb;padding:40px;font-size:13px">
+          <p>暂无会话</p>
+          <p style="margin-top:8px;font-size:12px">点击右上角 + 发起新聊天</p>
+        </div>
+      `;
       return;
     }
 
@@ -436,25 +609,26 @@ async function openChat(userId, userName) {
   currentChatUserId = userId;
   currentChatUserName = userName;
   
-  // UI 切换
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('chatContent').style.display = 'flex';
   document.getElementById('chatName').textContent = userName;
   document.getElementById('chatAvatar').textContent = userName.charAt(0).toUpperCase();
   
-  // 移动端：显示聊天区
   if (window.innerWidth <= 700) {
     document.getElementById('sidebar').classList.remove('show');
     document.getElementById('chatArea').classList.add('show');
   }
 
-  // 高亮当前会话
   document.querySelectorAll('.conversation-item').forEach(item => {
     item.classList.remove('active');
   });
-  event?.currentTarget?.classList.add('active');
+  const items = document.querySelectorAll('.conversation-item');
+  items.forEach(item => {
+    if (item.getAttribute('onclick')?.includes(`openChat(${userId},`)) {
+      item.classList.add('active');
+    }
+  });
 
-  // 加载消息
   await loadMessages();
 }
 
@@ -487,15 +661,12 @@ async function loadMessages() {
       </div>
     `).join('');
 
-    // 滚动到底部
     wrap.scrollTop = wrap.scrollHeight;
 
-    // 更新最后一条消息ID
     if (messages.length > 0) {
       lastMsgId = messages[messages.length - 1].id;
     }
 
-    // 刷新会话列表（更新未读数）
     loadConversations();
   } catch (e) {
     console.error('加载消息失败', e);
@@ -534,7 +705,6 @@ async function sendMessage() {
   input.focus();
 }
 
-// Enter 发送
 document.getElementById('msgInput')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -542,7 +712,6 @@ document.getElementById('msgInput')?.addEventListener('keydown', (e) => {
   }
 });
 
-// 自动刷新
 function startRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(() => {
@@ -553,7 +722,48 @@ function startRefresh() {
   }, 8000);
 }
 
-// 初始化
+function openNewChatModal() {
+  if (!currentLoginUid) {
+    alert('请先登录');
+    return;
+  }
+  document.getElementById('newChatModal').classList.add('show');
+  document.getElementById('newChatUserId').focus();
+}
+
+function closeNewChatModal() {
+  document.getElementById('newChatModal').classList.remove('show');
+  document.getElementById('newChatUserId').value = '';
+  document.getElementById('newChatUserName').value = '';
+}
+
+function startNewChat() {
+  const userId = parseInt(document.getElementById('newChatUserId').value);
+  let userName = document.getElementById('newChatUserName').value.trim();
+
+  if (!userId) {
+    alert('请输入用户ID');
+    return;
+  }
+  if (!userName) {
+    userName = `用户${userId}`;
+  }
+
+  if (userId === currentLoginUid) {
+    alert('不能给自己发私信哦');
+    return;
+  }
+
+  closeNewChatModal();
+  openChat(userId, userName);
+}
+
+document.getElementById('newChatModal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'newChatModal') {
+    closeNewChatModal();
+  }
+});
+
 checkLoginState();
 </script>
 
