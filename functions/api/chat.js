@@ -85,7 +85,20 @@ export async function onRequest({ request, env }) {
     // 发布消息
     if (request.method === 'POST' && action === 'send') {
       if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
-      
+      // 检查是否被临时禁言
+const userInfo = await db.prepare(`
+  SELECT role, ban_until FROM users WHERE id = ?
+`).bind(loginUser.uid).first();
+
+if (userInfo?.ban_until) {
+  const banUntil = new Date(userInfo.ban_until).getTime();
+  if (banUntil > Date.now()) {
+    return jsonResp({ code: 98, msg: '你已被禁言，暂时无法发言' }, 403);
+  } else {
+    // 禁言已到期，自动解封
+    await db.prepare(`UPDATE users SET ban_until = NULL WHERE id = ?`).bind(loginUser.uid).run();
+  }
+}
       const banRole = ['banned'];
       if (banRole.includes(loginUser.role)) {
         return jsonResp({ code: 98, msg: '封禁账号无法发送消息' }, 403);
@@ -199,7 +212,20 @@ export async function onRequest({ request, env }) {
     // 发表评论
     if (request.method === 'POST' && action === 'addComment') {
       if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
+// 检查是否被临时禁言
+const userInfo = await db.prepare(`
+  SELECT role, ban_until FROM users WHERE id = ?
+`).bind(loginUser.uid).first();
 
+if (userInfo?.ban_until) {
+  const banUntil = new Date(userInfo.ban_until).getTime();
+  if (banUntil > Date.now()) {
+    return jsonResp({ code: 98, msg: '你已被禁言，暂时无法发言' }, 403);
+  } else {
+    // 禁言已到期，自动解封
+    await db.prepare(`UPDATE users SET ban_until = NULL WHERE id = ?`).bind(loginUser.uid).run();
+  }
+}
       const banRole = ['banned'];
       if (banRole.includes(loginUser.role)) {
         return jsonResp({ code: 98, msg: '封禁账号无法评论' }, 403);
@@ -353,7 +379,20 @@ export async function onRequest({ request, env }) {
     // 发送私聊消息
     if (request.method === 'POST' && action === 'sendPrivate') {
       if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
+// 检查是否被临时禁言
+const userInfo = await db.prepare(`
+  SELECT role, ban_until FROM users WHERE id = ?
+`).bind(loginUser.uid).first();
 
+if (userInfo?.ban_until) {
+  const banUntil = new Date(userInfo.ban_until).getTime();
+  if (banUntil > Date.now()) {
+    return jsonResp({ code: 98, msg: '你已被禁言，暂时无法发言' }, 403);
+  } else {
+    // 禁言已到期，自动解封
+    await db.prepare(`UPDATE users SET ban_until = NULL WHERE id = ?`).bind(loginUser.uid).run();
+  }
+}
       const banRole = ['banned'];
       if (banRole.includes(loginUser.role)) {
         return jsonResp({ code: 98, msg: '封禁账号无法发送消息' }, 403);
