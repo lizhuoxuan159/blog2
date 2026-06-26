@@ -42,6 +42,11 @@
       opacity: 0.9;
     }
     .navbar a:hover { opacity: 1; }
+    .nav-links {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
 
     /* 主容器 */
     .container {
@@ -134,6 +139,7 @@
       font-size: 16px;
       margin-right: 12px;
       flex-shrink: 0;
+      cursor: pointer;
     }
     .user-info {
       flex: 1;
@@ -142,6 +148,10 @@
       font-weight: 600;
       color: #2c3e50;
       font-size: 14px;
+      cursor: pointer;
+    }
+    .username:hover {
+      color: #3498db;
     }
     .role-badge {
       display: inline-block;
@@ -241,6 +251,10 @@
       color: #3498db;
       font-weight: 500;
       margin-right: 8px;
+      cursor: pointer;
+    }
+    .comment-user:hover {
+      text-decoration: underline;
     }
     .comment-time {
       color: #bbb;
@@ -367,7 +381,10 @@
 <div class="navbar">
   <div class="navbar-inner">
     <h1>🐮 犇犇广场</h1>
-    <a href="/index.html">← 返回首页</a>
+    <div class="nav-links">
+      <a href="/private.html">💬 私信</a>
+      <a href="/index.html">← 返回首页</a>
+    </div>
   </div>
 </div>
 
@@ -419,6 +436,19 @@ function getRoleBadge(role) {
     'writer': '<span class="role-badge role-writer">作者</span>'
   };
   return badgeMap[role] || '';
+}
+
+// 跳转到私信页面
+function goPrivate(userId, userName) {
+  if (!currentLoginUid) {
+    alert('请先登录');
+    return;
+  }
+  if (userId === currentLoginUid) {
+    alert('不能给自己发私信哦');
+    return;
+  }
+  location.href = `/private.html?userId=${userId}&userName=${encodeURIComponent(userName)}`;
 }
 
 async function checkLoginState() {
@@ -493,9 +523,11 @@ function renderMessage(msg) {
   
   div.innerHTML = `
     <div class="message-header">
-      <div class="avatar">${escapeHtml(msg.userName ? msg.userName.charAt(0).toUpperCase() : '?')}</div>
+      <div class="avatar" onclick="goPrivate(${msg.userId}, '${escapeHtml(msg.userName)}')" title="点击发私信">
+        ${escapeHtml(msg.userName ? msg.userName.charAt(0).toUpperCase() : '?')}
+      </div>
       <div class="user-info">
-        <div class="username">
+        <div class="username" onclick="goPrivate(${msg.userId}, '${escapeHtml(msg.userName)}')" title="点击发私信">
           ${escapeHtml(msg.userName)}${getRoleBadge(msg.userRole)}
         </div>
         <div class="post-time">${msg.createTime}</div>
@@ -647,7 +679,7 @@ async function loadComments(msgId) {
       html += `
       <div class="comment-item" id="comment-${cm.id}">
         <div class="comment-header">
-          <span class="comment-user">${escapeHtml(cm.userName)}</span>
+          <span class="comment-user" onclick="goPrivate(${cm.userId}, '${escapeHtml(cm.userName)}')">${escapeHtml(cm.userName)}</span>
           <span class="comment-time">${cm.createTime}</span>
           ${currentLoginUid ? '<span class="reply-link" onclick="startReply(' + msgId + ', ' + cm.id + ', \'' + escapeHtml(cm.userName) + '\')">回复</span>' : ''}
           ${canDelete ? '<button class="comment-del-btn" onclick="deleteComment(' + cm.id + ', ' + msgId + ')">删除</button>' : ''}
