@@ -10,21 +10,19 @@
 <div class="container">
   <nav id="nav">
     <a href="/index.html"><button class="glass-btn">首页</button></a>
+    <a href="/chat.html"><button class="glass-btn">🐮 犇犇广场</button></a>
     <a href="/write.html"><button class="glass-btn">写文章</button></a>
     <a href="/login.html"><button class="glass-btn">登录</button></a>
     <a href="/register.html"><button class="glass-btn">注册</button></a>
   </nav>
-
   <div class="glass">
     <h1 style="margin-bottom:20px">📖 最新文章</h1>
     <div id="postList"></div>
   </div>
 </div>
-
 <script>
 let isLogin = false;
 let currentUser = null;
-
 // 全局校验登录状态
 async function checkLogin() {
   const res = await fetch('/api/user?action=check');
@@ -33,7 +31,6 @@ async function checkLogin() {
   currentUser = data;
   renderNav();
 }
-
 // 渲染导航栏（带角色标识、管理员入口）
 function renderNav() {
   const nav = document.getElementById('nav');
@@ -45,6 +42,7 @@ function renderNav() {
     else if(currentUser.role === "guest") roleText = "【访客】";
     nav.innerHTML = `
       <a href="/index.html"><button class="glass-btn">首页</button></a>
+      <a href="/chat.html"><button class="glass-btn">🐮 犇犇广场</button></a>
       <a href="/write.html"><button class="glass-btn">写文章</button></a>
       <a href="/account.html"><button class="glass-btn">个人中心</button></a>
       ${currentUser.role==='admin'?`<a href="/admin.html"><button class="glass-btn">用户管理</button></a>`:''}
@@ -55,19 +53,18 @@ function renderNav() {
   }else{
     nav.innerHTML = `
       <a href="/index.html"><button class="glass-btn">首页</button></a>
+      <a href="/chat.html"><button class="glass-btn">🐮 犇犇广场</button></a>
       <a href="/write.html"><button class="glass-btn">写文章</button></a>
       <a href="/login.html"><button class="glass-btn">登录</button></a>
       <a href="/register.html"><button class="glass-btn">注册</button></a>
     `;
   }
 }
-
 // 退出登录
 async function logout(){
   await fetch('/api/user?action=logout',{method:'POST'});
   location.reload();
 }
-
 async function loadPosts(){
   const res = await fetch('/api/post?action=list');
   const posts = await res.json();
@@ -94,7 +91,7 @@ function openPost(id){
 }
 function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace( />/g,'&gt;');
 }
 async function delPostIndex(pid){
   if(!confirm('确定删除该文章？不可恢复！')) return;
