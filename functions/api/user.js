@@ -37,7 +37,7 @@ async function getLoginUser(request) {
   }
 }
 
-// 获取token 增加UA、异常捕获
+// 直连GitHub获取access_token，无代理
 async function getGithubToken(code, clientId, clientSecret, redirectUri) {
   const res = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -59,13 +59,13 @@ async function getGithubToken(code, clientId, clientSecret, redirectUri) {
   } catch {
     return {
       error: true,
-      msg: "GitHub授权接口返回非JSON拦截内容",
+      msg: "GitHub授权接口返回非JSON内容",
       detail: rawText.slice(0, 300)
     };
   }
 }
 
-// 获取用户信息：增加状态码校验，异常统一标记error
+// 直连GitHub用户信息接口，强状态码校验
 async function getGithubUserInfo(accessToken) {
   const res = await fetch("https://api.github.com/user", {
     headers: {
@@ -87,7 +87,7 @@ async function getGithubUserInfo(accessToken) {
   } catch {
     return {
       error: true,
-      msg: "拉取GitHub用户信息失败，源站返回拦截文本",
+      msg: "拉取GitHub用户信息失败，返回非标准JSON",
       detail: raw.slice(0, 300)
     };
   }
@@ -100,7 +100,7 @@ export async function onRequest({ request, env }) {
     const action = url.searchParams.get('action');
     const loginUser = await getLoginUser(request);
 
-    // GitHub登录跳转入口
+    // GitHub登录跳转（纯原生github授权地址，无镜像）
     if (action === "githubAuth") {
       const clientId = env.GITHUB_CLIENT_ID;
       const siteOrigin = env.SITE_ORIGIN;
@@ -142,7 +142,7 @@ export async function onRequest({ request, env }) {
       }
 
       const userInfo = await getGithubUserInfo(tokenData.access_token);
-      // 强校验：防止undefined进入数据库
+      // 强拦截：数据缺失直接返回，绝不进入SQL逻辑
       if (
         userInfo.error
         || typeof userInfo.id === "undefined"
@@ -156,34 +156,34 @@ export async function onRequest({ request, env }) {
         }, 500);
       }
 
+      // 强制兜底，防止undefined
       const githubId = String(userInfo.id);
       const githubName = userInfo.login;
-      const safeGithubId = githubId ?? "";
+      const safeGithubId = githubId ?? null;
 
-      // 查询该Github是否绑定网站账号
       let bindUser = await db.prepare(`
         SELECT id, username, role, is_cancel FROM users WHERE github_id = ?
       `).bind(safeGithubId).first();
 
-      // 场景1：已登录，个人中心绑定Github
+      // 场景1：已登录账号，绑定GitHub
       if (loginUser) {
         if (bindUser) {
           return jsonResp({ code: 500, msg: "该GitHub账号已绑定其他网站账号，无法重复绑定" }, 500);
         }
         await db.prepare(`UPDATE users SET github_id = ? WHERE id = ?`)
-          .bind(safeGithubId, loginUser.id)
+          .bind(safeGithubId, loginUser.id ?? null)
           .run();
         const newToken = createSessionToken(loginUser.id, loginUser.username, loginUser.role);
         return new Response(null, {
           status: 302,
           headers: {
-            Location: `${siteOrigin}/user.html`,
+            Location: `${siteOrigin}/account.html`,
             "Set-Cookie": `blog_session=${newToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`
           }
         });
       }
 
-      // 场景2：未登录，Github快捷登录
+      // 场景2：未登录，GitHub快捷登录
       if (bindUser) {
         if (bindUser.is_cancel === 1 || bindUser.role === "banned") {
           return jsonResp({ code: 500, msg: "该绑定账号已注销或封禁，禁止登录" }, 500);
@@ -197,7 +197,7 @@ export async function onRequest({ request, env }) {
           }
         });
       } else {
-        // 无绑定记录，自动新建账号
+        // 自动新建账号，github_id兜底null
         let newUser;
         try {
           await db.prepare(`
@@ -208,7 +208,6 @@ export async function onRequest({ request, env }) {
             SELECT id, username, role FROM users WHERE github_id = ?
           `).bind(safeGithubId).first();
         } catch (e) {
-          // 用户名冲突，自动拼接后缀
           const fixName = `${githubName}_${githubId.slice(-4)}`;
           await db.prepare(`
             INSERT INTO users (username, password, role, is_cancel, github_id)
@@ -229,6 +228,18 @@ export async function onRequest({ request, env }) {
       }
     }
 
+    // 解绑GitHub账号接口（前端account.html调用）
+    if (action === "unbindGithub" && request.method === "POST") {
+      if (!loginUser) {
+        return jsonResp({ code: 99, msg: "请先登录" }, 401);
+      }
+      const uid = loginUser.id ?? null;
+      await db.prepare(`UPDATE users SET github_id = NULL WHERE id = ?`)
+        .bind(uid)
+        .run();
+      return jsonResp({ code: 0, msg: "GitHub账号解绑成功" });
+    }
+
     // 退出登录
     if (action === 'logout' && request.method === 'POST') {
       return new Response(JSON.stringify({ code: 0, msg: '已退出登录' }), {
@@ -239,12 +250,12 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 登录状态校验
+    // 登录校验：返回github_id供前端渲染绑定状态
     if (action === 'check' && request.method === 'GET') {
       if (!loginUser) return jsonResp({ login: false });
       const userInfo = await db.prepare(`
-        SELECT role, is_cancel FROM users WHERE id = ?
-      `).bind(loginUser.uid).first();
+        SELECT role, is_cancel, github_id FROM users WHERE id = ?
+      `).bind(loginUser.uid ?? null).first();
       if (!userInfo || userInfo.role === "banned" || userInfo.is_cancel === 1) {
         return new Response(JSON.stringify({ login: false, banned: true }), {
           headers: {
@@ -257,7 +268,8 @@ export async function onRequest({ request, env }) {
         login: true,
         uid: loginUser.uid,
         username: loginUser.username,
-        role: loginUser.role
+        role: userInfo.role,
+        github_id: userInfo.github_id
       });
     }
 
@@ -297,7 +309,7 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 管理员修改用户角色
+    // 管理员修改角色
     if (action === 'setRole' && request.method === 'POST') {
       if (!loginUser) return jsonResp({ code: 99, msg: '无操作权限，仅管理员可用' }, 403);
       const { targetUid, newRole } = await request.json();
@@ -307,7 +319,7 @@ export async function onRequest({ request, env }) {
       }
       const targetUser = await db.prepare(`
         SELECT id, role FROM users WHERE id = ?
-      `).bind(targetUid).first();
+      `).bind(targetUid ?? null).first();
       if (!targetUser) return jsonResp({ code: 1, msg: '用户不存在' });
 
       if (loginUser.role === 'admin') {
@@ -316,12 +328,12 @@ export async function onRequest({ request, env }) {
       }
 
       await db.prepare(`UPDATE users SET role = ? WHERE id = ?`)
-        .bind(newRole, targetUid)
+        .bind(newRole, targetUid ?? null)
         .run();
       return jsonResp({ code: 0, msg: '角色修改成功' });
     }
 
-    // 获取全部用户列表（管理员）
+    // 获取全部用户列表
     if (action === 'userList' && request.method === 'GET') {
       if (!loginUser || loginUser.role === 'guest' || loginUser.role === 'banned') {
         return jsonResp({ code: 99, msg: '无权访问' }, 403);
@@ -341,18 +353,17 @@ export async function onRequest({ request, env }) {
       if (Number(targetUid) === loginUser.uid) {
         return jsonResp({ code: 1, msg: '不能删除当前登录账号' });
       }
-      const targetUser = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid).first();
+      const targetUser = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid ?? null).first();
       if (!targetUser) return jsonResp({ code: 1, msg: '用户不存在' });
       if (loginUser.role === 'admin' && targetUser.role === 'owner') {
         return jsonResp({ code: 98, msg: '无法删除所有者账号' }, 403);
       }
-      // 先删除该用户发布文章
-      await db.prepare(`DELETE FROM posts WHERE author = ?`).bind(targetUid).run();
-      await db.prepare(`DELETE FROM users WHERE id = ?`).bind(targetUid).run();
+      await db.prepare(`DELETE FROM posts WHERE author = ?`).bind(targetUid ?? null).run();
+      await db.prepare(`DELETE FROM users WHERE id = ?`).bind(targetUid ?? null).run();
       return jsonResp({ code: 0, msg: '用户已删除' });
     }
 
-    // 管理员新建游客账号
+    // 管理员新建用户
     if (action === 'adminAddUser' && request.method === 'POST') {
       if (!loginUser || loginUser.role === 'guest' || loginUser.role === 'banned') {
         return jsonResp({ code: 99, msg: '仅管理员可操作' }, 403);
@@ -380,30 +391,30 @@ export async function onRequest({ request, env }) {
       const oldHash = await sha256(oldPwd);
       const userRow = await db.prepare(`
         SELECT password FROM users WHERE id = ?
-      `).bind(loginUser.uid).first();
+      `).bind(loginUser.uid ?? null).first();
       if (!userRow || userRow.password !== oldHash) {
         return jsonResp({ code: 1, msg: '原密码错误' });
       }
       const newHash = await sha256(newPwd);
       await db.prepare(`UPDATE users SET password = ? WHERE id = ?`)
-        .bind(newHash, loginUser.uid)
+        .bind(newHash, loginUser.uid ?? null)
         .run();
       return jsonResp({ code: 0, msg: '密码修改成功，请重新登录' });
     }
 
-    // 注销账号
+    // 注销账号（同步清空github_id）
     if (action === 'cancelAccount' && request.method === 'POST') {
       if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
       const { password } = await request.json();
       const pwdHash = await sha256(password);
       const userRow = await db.prepare(`
         SELECT password FROM users WHERE id = ?
-      `).bind(loginUser.uid).first();
+      `).bind(loginUser.uid ?? null).first();
       if (!userRow || userRow.password !== pwdHash) {
         return jsonResp({ code: 1, msg: '密码验证失败，无法注销' });
       }
       await db.prepare(`UPDATE users SET is_cancel = 1, github_id = NULL WHERE id = ?`)
-        .bind(loginUser.uid)
+        .bind(loginUser.uid ?? null)
         .run();
       return new Response(JSON.stringify({ code: 0, msg: '账号已注销' }), {
         headers: {
@@ -413,7 +424,6 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 未匹配action
     return jsonResp({ code: 99, msg: '非法请求' }, 405);
   } catch (globalErr) {
     return jsonResp({
