@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -15,16 +15,20 @@
     <h2>用户登录</h2>
     <input type="text" id="username" placeholder="用户名">
     <input type="password" id="password" placeholder="密码">
-    <!-- 关键：type="button" 避免表单默认提交刷新阻塞点击 -->
     <button class="glass-btn" style="width:100%" onclick="doLogin()">登录</button>
+
+    <!-- GitHub登录按钮 -->
+    <a href="/api/user?action=githubAuth">
+      <button class="glass-btn" style="width:100%;margin-top:12px;background:rgba(30,30,30,0.2)">使用 GitHub 快捷登录</button>
+    </a>
+
     <p style="margin-top:12px;text-align:center">没有账号？<a href="/register.html">去注册</a></p>
   </div>
 </div>
 
 <script>
-// 封装登录函数，全局捕获异常，防止点击静默失效
 async function doLogin() {
-  console.log('登录按钮被点击'); // 调试用，打开控制台可看是否触发点击
+  console.log('登录按钮被点击');
   const username = document.getElementById('username').value.trim();
   const password = document.getElementById('password').value.trim();
 
@@ -45,7 +49,6 @@ async function doLogin() {
     const data = await res.json();
     if (data.code === 0) {
       alert('登录成功');
-      // 登录成功跳转回未登录前原本要访问的页面
       const urlParams = new URLSearchParams(location.search);
       const redirectUrl = urlParams.get('redirect');
       if (redirectUrl) {
