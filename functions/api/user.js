@@ -37,64 +37,38 @@ async function getLoginUser(request) {
   }
 }
 
-// 优先直连GitHub，失败降级mirror代理，统一返回错误对象
+// 仅直连GitHub，移除ghproxy避免1016网关错误
 async function getGithubToken(code, clientId, clientSecret, redirectUri) {
+  const res = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json"
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code: code,
+      redirect_uri: redirectUri
+    })
+  });
+  const rawText = await res.text();
   try {
-    const res = await fetch("https://github.com/login/oauth/access_token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json"
-      },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code: code,
-        redirect_uri: redirectUri
-      })
-    });
-    const rawText = await res.text();
     return JSON.parse(rawText);
   } catch {
-    const res = await fetch("https://mirror.ghproxy.com/https://github.com/login/oauth/access_token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json"
-      },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code: code,
-        redirect_uri: redirectUri
-      })
-    });
-    const rawText = await res.text();
-    try {
-      return JSON.parse(rawText);
-    } catch (err) {
-      return { error: true, msg: "GitHub授权接口返回非标准JSON，源站与代理均异常", detail: rawText.slice(0, 300) };
-    }
+    return { error: true, msg: "GitHub源站返回非JSON拦截内容", detail: rawText.slice(0, 300) };
   }
 }
 
 async function getGithubUserInfo(accessToken) {
+  const res = await fetch("https://api.github.com/user", {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  const raw = await res.text();
   try {
-    const res = await fetch("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    const raw = await res.text();
     return JSON.parse(raw);
   } catch {
-    const res = await fetch("https://mirror.ghproxy.com/https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    const raw = await res.text();
-    try {
-      return JSON.parse(raw);
-    } catch (err) {
-      return { error: true, msg: "获取GitHub用户信息失败，源站与代理均异常", detail: raw.slice(0, 300) };
-    }
+    return { error: true, msg: "拉取GitHub用户信息失败，源站返回拦截文本", detail: raw.slice(0, 300) };
   }
 }
 
@@ -105,7 +79,7 @@ export async function onRequest({ request, env }) {
     const action = url.searchParams.get('action');
     const loginUser = await getLoginUser(request);
 
-    // GitHub登录跳转
+    // GitHub登录/绑定跳转
     if (action === "githubAuth") {
       const clientId = env.GITHUB_CLIENT_ID;
       const siteOrigin = env.SITE_ORIGIN;
@@ -120,26 +94,25 @@ export async function onRequest({ request, env }) {
       return Response.redirect(githubAuthUrl.toString(), 302);
     }
 
-    // GitHub授权回调
+    // GitHub授权回调（绑定账号核心逻辑）
     if (action === "githubCallback") {
       const clientId = env.GITHUB_CLIENT_ID;
       const clientSecret = env.GITHUB_CLIENT_SECRET;
       const siteOrigin = env.SITE_ORIGIN;
       if (!clientId || !clientSecret || !siteOrigin) {
-        return jsonResp({ code: 500, msg: "GitHub登录配置缺失" }, 500);
+        return jsonResp({ code: 500, msg: "GitHub OAuth环境变量未配置完整" }, 500);
       }
       const code = url.searchParams.get("code");
       if (!code) {
-        return jsonResp({ code: 500, msg: "授权回调缺失code参数" }, 500);
+        return jsonResp({ code: 500, msg: "授权回调缺少code参数，请重新绑定" }, 500);
       }
       const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
       const tokenData = await getGithubToken(code, clientId, clientSecret, redirectUri);
 
-      // 接口异常直接返回500，前端弹窗提示
       if (tokenData.error || !tokenData.access_token) {
         return jsonResp({
           code: 500,
-          msg: tokenData.msg || "无法获取GitHub授权令牌",
+          msg: tokenData.msg || "无法获取GitHub授权令牌，接口被拦截",
           detail: tokenData.detail || ""
         }, 500);
       }
@@ -179,7 +152,7 @@ export async function onRequest({ request, env }) {
       }
 
       if (dbUser.is_cancel === 1 || dbUser.role === "banned") {
-        return jsonResp({ code: 500, msg: "该账号已注销或封禁，禁止登录" }, 500);
+        return jsonResp({ code: 500, msg: "该GitHub绑定账号已注销或封禁，禁止登录" }, 500);
       }
 
       const sessionToken = createSessionToken(dbUser.id, dbUser.username, dbUser.role);
