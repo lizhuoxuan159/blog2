@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -14,6 +14,14 @@
   <div class="glass" style="max-width:500px;margin:0 auto">
     <h2>个人设置</h2>
     <hr>
+
+    <h3>GitHub 账号绑定</h3>
+    <p style="opacity:0.8">绑定后可直接使用GitHub快捷登录</p>
+    <a href="/api/user?action=githubAuth">
+      <button class="glass-btn" style="background:rgba(40,140,255,0.2)">绑定/切换 GitHub 账号</button>
+    </a>
+
+    <hr style="margin:25px 0">
     <h3>修改密码</h3>
     <input type="password" id="oldPwd" placeholder="当前密码">
     <input type="password" id="newPwd" placeholder="新密码">
