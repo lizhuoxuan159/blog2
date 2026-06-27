@@ -39,7 +39,7 @@ async function getLoginUser(request) {
 
 // GitHub OAuth 获取token，使用ghproxy避免Worker请求被墙
 async function getGithubToken(code, clientId, clientSecret, redirectUri) {
-  const res = await fetch("https://ghproxy.com/https://github.com/login/oauth/access_token", {
+  const res = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body: new URLSearchParams({
@@ -54,7 +54,7 @@ async function getGithubToken(code, clientId, clientSecret, redirectUri) {
 
 // 获取GitHub用户信息
 async function getGithubUserInfo(accessToken) {
-  const res = await fetch("https://ghproxy.com/https://api.github.com/user", {
+  const res = await fetch("https://api.github.com/user", {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   return await res.json();
