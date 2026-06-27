@@ -37,11 +37,12 @@ async function getLoginUser(request) {
   }
 }
 
-// 仅直连GitHub，移除ghproxy避免1016网关错误
+// 增加User-Agent头，解决GitHub拦截
 async function getGithubToken(code, clientId, clientSecret, redirectUri) {
   const res = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: {
+      "User-Agent": "Pages-OAuth/1.0",
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json"
     },
@@ -56,13 +57,16 @@ async function getGithubToken(code, clientId, clientSecret, redirectUri) {
   try {
     return JSON.parse(rawText);
   } catch {
-    return { error: true, msg: "GitHub源站返回非JSON拦截内容", detail: rawText.slice(0, 300) };
+    return { error: true, msg: "GitHub接口返回非JSON拦截内容", detail: rawText.slice(0, 300) };
   }
 }
 
 async function getGithubUserInfo(accessToken) {
   const res = await fetch("https://api.github.com/user", {
-    headers: { Authorization: `Bearer ${accessToken}` }
+    headers: {
+      "User-Agent": "Pages-OAuth/1.0",
+      Authorization: `Bearer ${accessToken}`
+    }
   });
   const raw = await res.text();
   try {
