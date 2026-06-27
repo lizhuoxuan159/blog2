@@ -37,9 +37,9 @@ async function getLoginUser(request) {
   }
 }
 
-// 使用ghproxy代理获取token，兼容非JSON返回
+// 备用mirror.ghproxy代理，解决原代理被拦截返回非JSON报错
 async function getGithubToken(code, clientId, clientSecret, redirectUri) {
-  const res = await fetch("https://ghproxy.com/https://github.com/login/oauth/access_token", {
+  const res = await fetch("https://mirror.ghproxy.com/https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -60,9 +60,8 @@ async function getGithubToken(code, clientId, clientSecret, redirectUri) {
   }
 }
 
-// 使用ghproxy代理获取用户信息，兼容非JSON返回
 async function getGithubUserInfo(accessToken) {
-  const res = await fetch("https://ghproxy.com/https://api.github.com/user", {
+  const res = await fetch("https://mirror.ghproxy.com/https://api.github.com/user", {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   const raw = await res.text();
@@ -109,13 +108,15 @@ export async function onRequest({ request, env }) {
       }
       const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
       const tokenData = await getGithubToken(code, clientId, clientSecret, redirectUri);
-      // 捕获代理/网络错误、无token
+      // 携带错误详情跳转登录页
       if (tokenData.error || !tokenData.access_token) {
-        return Response.redirect(`${siteOrigin}/login?err=github_token_err`, 302);
+        const errMsg = encodeURIComponent(tokenData.error || "无法获取授权令牌，代理访问GitHub受限");
+        return Response.redirect(`${siteOrigin}/login?err=github_token_err&msg=${errMsg}`, 302);
       }
       const userInfo = await getGithubUserInfo(tokenData.access_token);
       if (userInfo.error || !userInfo.id) {
-        return Response.redirect(`${siteOrigin}/login?err=github_user_fail`, 302);
+        const errMsg = encodeURIComponent(userInfo.error || "拉取GitHub用户信息失败");
+        return Response.redirect(`${siteOrigin}/login?err=github_user_fail&msg=${errMsg}`, 302);
       }
       const githubId = String(userInfo.id);
       const githubName = userInfo.login;
