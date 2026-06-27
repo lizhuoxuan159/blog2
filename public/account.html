@@ -17,15 +17,12 @@
 
     <h3>GitHub 账号绑定</h3>
     <p style="opacity:0.8">绑定后可直接使用GitHub快捷登录</p>
-    <!-- 绑定状态容器 -->
     <div id="githubBindArea">
-      <!-- 未绑定：显示绑定按钮 -->
       <a id="bindBtnWrap" href="/api/user?action=githubAuth">
         <button class="glass-btn" style="background:rgba(40,140,255,0.2)">绑定 GitHub 账号</button>
       </a>
-      <!-- 已绑定：显示用户名+解绑按钮，默认隐藏 -->
       <div id="bindInfoWrap" style="display:none;margin-top:12px;">
-        <p>已绑定 GitHub：<span id="githubName" style="font-weight:bold;color:#408cff"></span></p>
+        <p>已绑定 GitHub ID：<span id="githubName" style="font-weight:bold;color:#408cff"></span></p>
         <button class="glass-btn" style="background:rgba(255,100,100,0.2);margin-top:8px" onclick="unbindGithub()">解绑GitHub</button>
       </div>
     </div>
@@ -45,33 +42,25 @@
 <script>
 let userData = null;
 
-// 页面加载校验登录 + 获取用户信息
 (async function checkAuthRedirect() {
   const res = await fetch('/api/user?action=check');
   const data = await res.json();
   userData = data;
-  // 未登录 / 账号注销 / 账号封禁 → 跳转登录
   if (!data.login) {
     const currentUrl = location.href;
     location.href = `/login.html?redirect=${encodeURIComponent(currentUrl)}`;
     return;
   }
-  // 渲染GitHub绑定状态
   renderGithubBind();
 })();
 
-// 根据用户github_id渲染界面
 function renderGithubBind() {
   const bindBtnWrap = document.getElementById('bindBtnWrap');
   const bindInfoWrap = document.getElementById('bindInfoWrap');
   const nameText = document.getElementById('githubName');
-
-  // userData里没有github_name，只能从数据库id判断有无绑定
-  // 有github_id代表已绑定
   if (userData.github_id && userData.github_id !== null) {
     bindBtnWrap.style.display = 'none';
     bindInfoWrap.style.display = 'block';
-    // 注意：当前check接口未返回github用户名，这里先展示绑定ID
     nameText.innerText = userData.github_id;
   } else {
     bindBtnWrap.style.display = 'block';
@@ -79,7 +68,6 @@ function renderGithubBind() {
   }
 }
 
-// 解绑GitHub
 async function unbindGithub() {
   if (!confirm('确认解绑当前GitHub账号？解绑后无法再用该GitHub登录本站')) return;
   const res = await fetch('/api/user?action=unbindGithub', {
