@@ -1,6 +1,12 @@
 name = "blog2"
 compatibility_date = "2025-10-01"
 pages_build_output_dir = "public"
+# 运行时明文变量（function 可通过 env.xxx 获取）
+[
+vars
+]
+GITHUB_CLIENT_ID = "Ov23lid2fnvzCXAcXZ0J"
+SITE_ORIGIN = "https://blog.lizhuoxuan.dpdns.org/api/user?action=githubCallback"
 [[d1_databases]]
 binding = "DB"
 database_name = "blog-db"
