@@ -38,7 +38,10 @@ async function getLoginUser(request) {
 }
 
 // GitHub OAuth 获取token，使用ghproxy避免Worker请求被墙
-async function getGithubToken(code, clientId, clientSecret, redirectUri) {
+async function getGithubToken(code, clientId, clientSecret, const siteOriginRaw = env.SITE_ORIGIN;
+const siteOrigin = siteOriginRaw.replace(/\/+$/, '');
+const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
+console.log("跳转时的redirectUri：", redirectUri); // 新增打印
   const res = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
@@ -87,6 +90,10 @@ export async function onRequest({ request, env }) {
       const clientId = env.GITHUB_CLIENT_ID;
       const clientSecret = env.GITHUB_CLIENT_SECRET;
       const siteOrigin = env.SITE_ORIGIN;
+      const siteOriginRaw = env.SITE_ORIGIN;
+const siteOrigin = siteOriginRaw.replace(/\/+$/, '');
+const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
+console.log("回调发请求的redirectUri：", redirectUri); // 新增打印
       if (!clientId || !clientSecret || !siteOrigin) {
         return jsonResp({ code: 500, msg: "GitHub登录配置缺失" }, 500);
       }
