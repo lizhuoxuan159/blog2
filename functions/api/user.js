@@ -37,7 +37,7 @@ async function getLoginUser(request) {
   }
 }
 
-// 增加User-Agent头，解决GitHub拦截
+// 携带User-Agent，解决GitHub拦截报错
 async function getGithubToken(code, clientId, clientSecret, redirectUri) {
   const res = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -83,7 +83,7 @@ export async function onRequest({ request, env }) {
     const action = url.searchParams.get('action');
     const loginUser = await getLoginUser(request);
 
-    // GitHub登录/绑定跳转
+    // GitHub登录/绑定跳转入口
     if (action === "githubAuth") {
       const clientId = env.GITHUB_CLIENT_ID;
       const siteOrigin = env.SITE_ORIGIN;
@@ -98,7 +98,7 @@ export async function onRequest({ request, env }) {
       return Response.redirect(githubAuthUrl.toString(), 302);
     }
 
-    // GitHub授权回调（绑定账号核心逻辑）
+    // GitHub授权回调核心逻辑（区分登录/绑定两种模式）
     if (action === "githubCallback") {
       const clientId = env.GITHUB_CLIENT_ID;
       const clientSecret = env.GITHUB_CLIENT_SECRET;
@@ -108,7 +108,7 @@ export async function onRequest({ request, env }) {
       }
       const code = url.searchParams.get("code");
       if (!code) {
-        return jsonResp({ code: 500, msg: "授权回调缺少code参数，请重新绑定" }, 500);
+        return jsonResp({ code: 500, msg: "授权回调缺少code参数，请重新操作" }, 500);
       }
       const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
       const tokenData = await getGithubToken(code, clientId, clientSecret, redirectUri);
@@ -116,7 +116,7 @@ export async function onRequest({ request, env }) {
       if (tokenData.error || !tokenData.access_token) {
         return jsonResp({
           code: 500,
-          msg: tokenData.msg || "无法获取GitHub授权令牌，接口被拦截",
+          msg: tokenData.msg || "无法获取GitHub授权令牌",
           detail: tokenData.detail || ""
         }, 500);
       }
@@ -132,41 +132,73 @@ export async function onRequest({ request, env }) {
 
       const githubId = String(userInfo.id);
       const githubName = userInfo.login;
-
-      let dbUser = await db.prepare(`SELECT id, username, role, is_cancel FROM users WHERE github_id = ?`)
+      // 查询该Github是否已绑定任意账号
+      let bindUser = await db.prepare(`SELECT id, username, role, is_cancel FROM users WHERE github_id = ?`)
         .bind(githubId).first();
 
-      if (!dbUser) {
+      // 场景1：当前已登录，个人中心绑定Github
+      if (loginUser) {
+        // 该Github已绑定其他账号，冲突
+        if (bindUser) {
+          return jsonResp({ code: 500, msg: "该GitHub账号已绑定网站其他账号，无法重复绑定" }, 500);
+        }
+        // 更新当前登录用户的github_id，完成绑定
+        await db.prepare(`UPDATE users SET github_id = ? WHERE id = ?`)
+          .bind(githubId, loginUser.id).run();
+        const newToken = createSessionToken(loginUser.id, loginUser.username, loginUser.role);
+        // 绑定成功跳个人中心
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: `${siteOrigin}/user.html`,
+            "Set-Cookie": `blog_session=${newToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`
+          }
+        });
+      }
+
+      // 场景2：未登录，登录页Github快捷登录
+      if (bindUser) {
+        // 已有绑定账号，直接登录
+        if (bindUser.is_cancel === 1 || bindUser.role === "banned") {
+          return jsonResp({ code: 500, msg: "该GitHub绑定账号已注销或封禁，禁止登录" }, 500);
+        }
+        const sessionToken = createSessionToken(bindUser.id, bindUser.username, bindUser.role);
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: `${siteOrigin}/`,
+            "Set-Cookie": `blog_session=${sessionToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`
+          }
+        });
+      } else {
+        // 无绑定记录，自动新建账号
+        let newUser;
         try {
           await db.prepare(`
             INSERT INTO users (username, password, role, is_cancel, github_id)
             VALUES (?, ?, 'guest', 0, ?)
           `).bind(githubName, "", githubId).run();
-          dbUser = await db.prepare(`SELECT id, username, role FROM users WHERE github_id = ?`)
+          newUser = await db.prepare(`SELECT id, username, role FROM users WHERE github_id = ?`)
             .bind(githubId).first();
         } catch (e) {
+          // 用户名冲突，自动拼接后缀
           const fixName = `${githubName}_${githubId.slice(-4)}`;
           await db.prepare(`
             INSERT INTO users (username, password, role, is_cancel, github_id)
             VALUES (?, ?, 'guest', 0, ?)
           `).bind(fixName, "", githubId).run();
-          dbUser = await db.prepare(`SELECT id, username, role FROM users WHERE github_id = ?`)
+          newUser = await db.prepare(`SELECT id, username, role FROM users WHERE github_id = ?`)
             .bind(githubId).first();
         }
+        const sessionToken = createSessionToken(newUser.id, newUser.username, newUser.role);
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: `${siteOrigin}/`,
+            "Set-Cookie": `blog_session=${sessionToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`
+          }
+        });
       }
-
-      if (dbUser.is_cancel === 1 || dbUser.role === "banned") {
-        return jsonResp({ code: 500, msg: "该GitHub绑定账号已注销或封禁，禁止登录" }, 500);
-      }
-
-      const sessionToken = createSessionToken(dbUser.id, dbUser.username, dbUser.role);
-      return new Response(null, {
-        status: 302,
-        headers: {
-          Location: `${siteOrigin}/`,
-          "Set-Cookie": `blog_session=${sessionToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`
-        }
-      });
     }
 
     // 退出登录
