@@ -37,9 +37,9 @@ async function getLoginUser(request) {
   }
 }
 
-// GitHub OAuth 获取token，使用ghproxy避免Worker请求被墙
+// 使用ghproxy代理获取token，兼容非JSON返回
 async function getGithubToken(code, clientId, clientSecret, redirectUri) {
-  const res = await fetch("https://github.com/login/oauth/access_token", {
+  const res = await fetch("https://ghproxy.com/https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -53,20 +53,24 @@ async function getGithubToken(code, clientId, clientSecret, redirectUri) {
     })
   });
   const rawText = await res.text();
-  console.log("GitHub Token接口完整返回：", rawText);
   try {
     return JSON.parse(rawText);
-  } catch (err) {
-    return { error: "授权失败", detail: rawText };
+  } catch {
+    return { error: "GitHub接口返回非JSON", raw: rawText };
   }
 }
 
-// 获取GitHub用户信息
+// 使用ghproxy代理获取用户信息，兼容非JSON返回
 async function getGithubUserInfo(accessToken) {
-  const res = await fetch("https://api.github.com/user", {
+  const res = await fetch("https://ghproxy.com/https://api.github.com/user", {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
-  return await res.json();
+  const raw = await res.text();
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { error: "获取用户信息失败", raw: raw };
+  }
 }
 
 export async function onRequest({ request, env }) {
@@ -96,7 +100,6 @@ export async function onRequest({ request, env }) {
       const clientId = env.GITHUB_CLIENT_ID;
       const clientSecret = env.GITHUB_CLIENT_SECRET;
       const siteOrigin = env.SITE_ORIGIN;
-      const siteOriginRaw = env.SITE_ORIGIN;
       if (!clientId || !clientSecret || !siteOrigin) {
         return jsonResp({ code: 500, msg: "GitHub登录配置缺失" }, 500);
       }
@@ -106,18 +109,20 @@ export async function onRequest({ request, env }) {
       }
       const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
       const tokenData = await getGithubToken(code, clientId, clientSecret, redirectUri);
-      if (tokenData.error) {
+      // 捕获代理/网络错误、无token
+      if (tokenData.error || !tokenData.access_token) {
         return Response.redirect(`${siteOrigin}/login?err=github_token_err`, 302);
       }
       const userInfo = await getGithubUserInfo(tokenData.access_token);
+      if (userInfo.error || !userInfo.id) {
+        return Response.redirect(`${siteOrigin}/login?err=github_user_fail`, 302);
+      }
       const githubId = String(userInfo.id);
       const githubName = userInfo.login;
 
-      // 查询已绑定账号
       let dbUser = await db.prepare(`SELECT id, username, role, is_cancel FROM users WHERE github_id = ?`)
         .bind(githubId).first();
 
-      // 无绑定则自动创建账号
       if (!dbUser) {
         try {
           await db.prepare(`
@@ -127,7 +132,6 @@ export async function onRequest({ request, env }) {
           dbUser = await db.prepare(`SELECT id, username, role FROM users WHERE github_id = ?`)
             .bind(githubId).first();
         } catch (e) {
-          // 用户名冲突自动后缀
           const fixName = `${githubName}_${githubId.slice(-4)}`;
           await db.prepare(`
             INSERT INTO users (username, password, role, is_cancel, github_id)
@@ -138,12 +142,10 @@ export async function onRequest({ request, env }) {
         }
       }
 
-      // 账号封禁/注销拦截
       if (dbUser.is_cancel === 1 || dbUser.role === "banned") {
         return Response.redirect(`${siteOrigin}/login?err=account_disabled`, 302);
       }
 
-      // 生成登录Cookie，跳转首页
       const sessionToken = createSessionToken(dbUser.id, dbUser.username, dbUser.role);
       return new Response(null, {
         status: 302,
