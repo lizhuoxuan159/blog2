@@ -12,7 +12,7 @@ function createSessionToken(uid, username, role) {
     uid,
     username,
     role,
-    exp: Date.now() + 58800000
+    exp: Date.now() + 604800000
   };
   return btoa(JSON.stringify(payload));
 }
