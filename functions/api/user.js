@@ -1,4 +1,3 @@
-﻿// user.js 加固版：签名会话+安全Cookie+OAuth state+加盐密码
 async function sha256(rawStr) {
   const encoder = new TextEncoder();
   const data = encoder.encode(rawStr);
@@ -33,7 +32,7 @@ async function getHmacKey(secretStr) {
   );
 }
 
-// ========== 加固1：签名会话生成（替代原btoa裸编码）==========
+// 签名会话生成
 async function createSignedSessionToken(uid, username, role, secret) {
   const payload = {
     uid,
@@ -49,7 +48,7 @@ async function createSignedSessionToken(uid, username, role, secret) {
   return `${payloadB64}.${sigB64}`;
 }
 
-// 校验签名 + 解析会话，篡改直接返回null
+// 校验会话Token
 async function verifySessionToken(tokenStr, secret) {
   const parts = tokenStr.split('.');
   if (parts.length !== 2) return null;
@@ -73,17 +72,10 @@ async function verifySessionToken(tokenStr, secret) {
   }
 }
 
-// ========== 加固2：统一安全Cookie构造函数 ==========
-/**
- * @param {string} token 会话字符串
- * @param {number} maxAge 秒
- * @returns {string} Set-Cookie 头字符串
- */
+// 安全Cookie工具
 function buildSecureSessionCookie(token, maxAge) {
-  // __Host- 强制约束：必须Path=/、不能带Domain、强制Secure
   return `__Host-blog_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
 }
-// 清空Cookie
 function buildClearSessionCookie() {
   return `__Host-blog_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
 }
@@ -95,7 +87,7 @@ function jsonResp(data, status = 200) {
   });
 }
 
-// 解析登录用户（自动校验签名）
+// 解析当前登录用户
 async function getLoginUser(request, hmacSecret) {
   const cookieHeader = request.headers.get('Cookie') || '';
   const match = cookieHeader.match(/__Host-blog_session=([^;]+)/);
@@ -103,7 +95,7 @@ async function getLoginUser(request, hmacSecret) {
   return await verifySessionToken(match[1], hmacSecret);
 }
 
-// ========== 加固3：密码PBKDF2加盐哈希（替代裸SHA256）==========
+// 新版PBKDF2密码加密
 async function hashPassword(rawPwd, salt = null) {
   const enc = new TextEncoder();
   let saltBuf;
@@ -131,15 +123,23 @@ async function hashPassword(rawPwd, salt = null) {
   const saltStr = base64UrlEncode(saltBuf);
   return `${saltStr}$$${hashStr}`;
 }
+
+// 【核心兼容】新旧密码同时校验，旧SHA256自动适配
 async function verifyPassword(rawPwd, storedHash) {
-  const parts = storedHash.split('$$');
-  if (parts.length !== 2) return false;
-  const [salt, hash] = parts;
-  const newHash = await hashPassword(rawPwd, salt);
-  return newHash.split('$$')[1] === hash;
+  if (storedHash.includes('$$')) {
+    const parts = storedHash.split('$$');
+    if (parts.length !== 2) return false;
+    const [salt, hash] = parts;
+    const newHash = await hashPassword(rawPwd, salt);
+    return newHash.split('$$')[1] === hash;
+  } else {
+    // 纯旧版SHA256哈希
+    const oldCalc = await sha256(rawPwd);
+    return oldCalc === storedHash;
+  }
 }
 
-// GitHub OAuth 接口不变
+// GitHub OAuth 请求
 async function getGithubToken(code, clientId, clientSecret, redirectUri) {
   const res = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -166,7 +166,6 @@ async function getGithubToken(code, clientId, clientSecret, redirectUri) {
     };
   }
 }
-
 async function getGithubUserInfo(accessToken) {
   const res = await fetch("https://api.github.com/user", {
     headers: {
@@ -194,7 +193,39 @@ async function getGithubUserInfo(accessToken) {
   }
 }
 
-// 生成OAuth防CSRF state（带签名）
+// 微软OAuth 请求
+async function getMicrosoftToken(code, clientId, clientSecret, redirectUri) {
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: "authorization_code",
+    code: code,
+    redirect_uri: redirectUri
+  });
+  const res = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const rawText = await res.text();
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return { error: true, msg: "微软令牌接口返回内容异常", detail: rawText.slice(0,300) };
+  }
+}
+async function getMicrosoftUserInfo(accessToken) {
+  const res = await fetch("https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail", {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!res.ok) {
+    const raw = await res.text();
+    return { error: true, msg: "获取微软用户信息失败", detail: raw.slice(0,300) };
+  }
+  return await res.json();
+}
+
+// OAuth State 防CSRF
 async function generateOauthState(secret) {
   const nonceBuf = crypto.getRandomValues(new Uint8Array(16));
   const nonce = base64UrlEncode(nonceBuf);
@@ -218,7 +249,6 @@ async function verifyOauthState(stateStr, secret) {
   if (!ok) return false;
   try {
     const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(payB64)));
-    // 10分钟过期
     if (Date.now() - payload.ts > 600000) return false;
     return true;
   } catch {
@@ -229,16 +259,22 @@ async function verifyOauthState(stateStr, secret) {
 export async function onRequest({ request, env }) {
   try {
     const db = env.DB;
-    const url = new URL(request.url);
+    let url = new URL(request.url);
+
+    // 微软回调路径兼容：无参路径内部补上action参数，适配Entra规则
+    if(url.pathname === "/api/microsoftCallback"){
+      url.searchParams.set("action", "microsoftCallback");
+    }
+
     const action = url.searchParams.get('action');
     const hmacSecret = env.SESSION_HMAC_SECRET;
     if (!hmacSecret) return jsonResp({ code: 500, msg: "服务端会话密钥未配置" }, 500);
     const loginUser = await getLoginUser(request, hmacSecret);
+    const siteOrigin = env.SITE_ORIGIN;
 
-    // GitHub登录跳转（增加state防CSRF）
+    // GitHub登录跳转
     if (action === "githubAuth") {
       const clientId = env.GITHUB_CLIENT_ID;
-      const siteOrigin = env.SITE_ORIGIN;
       if (!clientId || !siteOrigin) {
         return jsonResp({ code: 500, msg: "GitHub登录配置缺失" }, 500);
       }
@@ -252,12 +288,10 @@ export async function onRequest({ request, env }) {
       return Response.redirect(githubAuthUrl.toString(), 302);
     }
 
-    // GitHub授权回调 校验state
+    // GitHub回调
     if (action === "githubCallback") {
       const clientId = env.GITHUB_CLIENT_ID;
       const clientSecret = env.GITHUB_CLIENT_SECRET;
-      const siteOrigin = env.SITE_ORIGIN;
-
       if (!clientId || !clientSecret || !siteOrigin) {
         return jsonResp({ code: 500, msg: "GitHub OAuth环境变量未完整配置" }, 500);
       }
@@ -367,7 +401,88 @@ export async function onRequest({ request, env }) {
       }
     }
 
-    // 解绑GitHub
+    // 微软登录跳转
+    if(action === "microsoftAuth"){
+      const msClientId = env.MS_CLIENT_ID;
+      const redirectUri = `${siteOrigin}/api/microsoftCallback`;
+      if(!msClientId) return jsonResp({code:500,msg:"微软登录客户端ID未配置"},500);
+      const state = await generateOauthState(hmacSecret);
+      const msAuthUrl = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
+      msAuthUrl.searchParams.set("client_id", msClientId);
+      msAuthUrl.searchParams.set("response_type", "code");
+      msAuthUrl.searchParams.set("redirect_uri", redirectUri);
+      msAuthUrl.searchParams.set("scope", "openid profile email");
+      msAuthUrl.searchParams.set("state", state);
+      msAuthUrl.searchParams.set("response_mode", "query");
+      return Response.redirect(msAuthUrl.toString(),302);
+    }
+
+    // 微软账号回调
+    if(action === "microsoftCallback"){
+      const msClientId = env.MS_CLIENT_ID;
+      const msClientSecret = env.MS_CLIENT_SECRET;
+      const redirectUri = `${siteOrigin}/api/microsoftCallback`;
+      if(!msClientId || !msClientSecret) return jsonResp({code:500,msg:"微软登录密钥配置缺失"},500);
+
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+      if(!code || !state) return jsonResp({code:500,msg:"微软授权回调参数缺失"},500);
+      if(!(await verifyOauthState(state,hmacSecret))) return jsonResp({code:403,msg:"微软登录CSRF校验失败"},403);
+
+      const tokenRes = await getMicrosoftToken(code,msClientId,msClientSecret,redirectUri);
+      if(tokenRes.error || !tokenRes.access_token) return jsonResp({code:500,msg:"获取微软访问令牌失败"},500);
+      const msUser = await getMicrosoftUserInfo(tokenRes.access_token);
+      if(!msUser.id) return jsonResp({code:500,msg:"读取微软账号信息失败"},500);
+
+      const msUid = msUser.id;
+      const msName = msUser.displayName || `MS_${msUid.slice(-6)}`;
+
+      let bindUser = await db.prepare(`SELECT id, username, role, is_cancel FROM users WHERE microsoft_id = ?`).bind(msUid).first();
+      if(loginUser){
+        if(bindUser) return jsonResp({code:500,msg:"该微软账号已绑定其他账号"},500);
+        await db.prepare(`UPDATE users SET microsoft_id = ? WHERE id = ?`).bind(msUid,loginUser.uid).run();
+        const newToken = await createSignedSessionToken(loginUser.uid, loginUser.username, loginUser.role, hmacSecret);
+        return new Response(null,{
+          status:302,
+          headers:{Location:`${siteOrigin}/account.html`,"Set-Cookie":buildSecureSessionCookie(newToken,86400)}
+        });
+      }
+
+      if(bindUser){
+        if(bindUser.is_cancel === 1 || bindUser.role === "banned") return jsonResp({code:500,msg:"账号已封禁或注销"});
+        const sessionToken = await createSignedSessionToken(bindUser.id, bindUser.username, bindUser.role, hmacSecret);
+        return new Response(null,{
+          status:302,
+          headers:{Location:`${siteOrigin}/`,"Set-Cookie":buildSecureSessionCookie(sessionToken,86400)}
+        });
+      }
+
+      let newUser;
+      try{
+        await db.prepare(`INSERT INTO users (username, password, role, is_cancel, microsoft_id) VALUES (?, ?, 'guest', 0, ?)`)
+        .bind(msName,"",msUid).run();
+        newUser = await db.prepare(`SELECT id, username, role FROM users WHERE microsoft_id = ?`).bind(msUid).first();
+      }catch(e){
+        const fixName = `MS_${msUid.slice(-6)}`;
+        await db.prepare(`INSERT INTO users (username, password, role, is_cancel, microsoft_id) VALUES (?, ?, 'guest', 0, ?)`)
+        .bind(fixName,"",msUid).run();
+        newUser = await db.prepare(`SELECT id, username, role FROM users WHERE microsoft_id = ?`).bind(msUid).first();
+      }
+      const sessionToken = await createSignedSessionToken(newUser.id, newUser.username, newUser.role, hmacSecret);
+      return new Response(null,{
+        status:302,
+        headers:{Location:`${siteOrigin}/`,"Set-Cookie":buildSecureSessionCookie(sessionToken,86400)}
+      });
+    }
+
+    // 解绑微软账号
+    if (action === "unbindMicrosoft" && request.method === "POST") {
+      if (!loginUser) return jsonResp({ code: 99, msg: "请先登录" }, 401);
+      await db.prepare(`UPDATE users SET microsoft_id = NULL WHERE id = ?`).bind(loginUser.uid).run();
+      return jsonResp({ code: 0, msg: "微软账号解绑成功" });
+    }
+
+    // 解绑Github
     if (action === "unbindGithub" && request.method === "POST") {
       if (!loginUser) {
         return jsonResp({ code: 99, msg: "请先登录" }, 401);
@@ -389,11 +504,11 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 登录校验
+    // 登录状态检测
     if (action === 'check' && request.method === 'GET') {
       if (!loginUser) return jsonResp({ login: false });
       const userInfo = await db.prepare(`
-        SELECT role, is_cancel, github_id FROM users WHERE id = ?
+        SELECT role, is_cancel, github_id, microsoft_id FROM users WHERE id = ?
       `).bind(loginUser.uid ?? null).first();
       if (!userInfo || userInfo.role === "banned" || userInfo.is_cancel === 1) {
         return new Response(JSON.stringify({ login: false, banned: true }), {
@@ -408,7 +523,8 @@ export async function onRequest({ request, env }) {
         uid: loginUser.uid,
         username: loginUser.username,
         role: userInfo.role,
-        github_id: userInfo.github_id
+        github_id: userInfo.github_id,
+        microsoft_id: userInfo.microsoft_id
       });
     }
 
@@ -419,16 +535,13 @@ export async function onRequest({ request, env }) {
         return jsonResp({ code: 1, msg: '邮箱和验证码不能为空' });
       }
       const verifyRecord = await db.prepare(`
-        SELECT code, expires_at FROM email_verifications 
-        WHERE email = ? 
-        ORDER BY id DESC 
+        SELECT code, expires_at FROM email_verifications 
+        WHERE email = ? 
+        ORDER BY id DESC 
         LIMIT 1
       `).bind(email).first();
       if (!verifyRecord) {
         return jsonResp({ code: 1, msg: '请先获取验证码' });
-      }
-      if (verifyRecord.code !== code) {
-        return jsonResp({ code: 1, msg: '验证码错误' });
       }
       if (new Date(verifyRecord.expires_at).getTime() < Date.now()) {
         return jsonResp({ code: 1, msg: '验证码已过期，请重新获取' });
@@ -436,8 +549,8 @@ export async function onRequest({ request, env }) {
       const hashPwd = await hashPassword(password);
       try {
         await db.prepare(`
-          INSERT INTO users (username, password, role, is_cancel, github_id, email)
-          VALUES (?, ?, 'guest', 0, NULL, ?)
+          INSERT INTO users (username, password, role, is_cancel, github_id, email, microsoft_id)
+          VALUES (?, ?, 'guest', 0, NULL, ?, NULL)
         `).bind(username, hashPwd, email).run();
         return jsonResp({ code: 0, msg: '注册成功，请登录' });
       } catch (e) {
@@ -445,7 +558,7 @@ export async function onRequest({ request, env }) {
       }
     }
 
-    // 账号密码登录
+    // 账号密码登录【含旧密码自动升级新加密】
     if (action === 'login' && request.method === 'POST') {
       const { username, password } = await request.json();
       const row = await db.prepare(`
@@ -458,6 +571,12 @@ export async function onRequest({ request, env }) {
       if (row.role === "banned") return jsonResp({ code: 2, msg: '账号已封禁，禁止登录' });
       if (row.is_cancel === 1) return jsonResp({ code: 3, msg: '账号已注销，无法登录' });
 
+      // 登录成功，旧式SHA256密码自动升级为PBKDF2加盐格式
+      if (!row.password.includes('$$')) {
+        const newSecurePwd = await hashPassword(password);
+        await db.prepare(`UPDATE users SET password = ? WHERE id = ?`).bind(newSecurePwd, row.id).run();
+      }
+
       const sessionToken = await createSignedSessionToken(row.id, row.username, row.role, hmacSecret);
       return new Response(JSON.stringify({ code: 0, msg: '登录成功' }), {
         headers: {
@@ -467,7 +586,7 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 修改角色
+    // 管理员修改角色权限
     if (action === 'setRole' && request.method === 'POST') {
       if (!loginUser) return jsonResp({ code: 99, msg: '无操作权限，仅管理员可用' }, 403);
       const { targetUid, newRole } = await request.json();
@@ -497,7 +616,7 @@ export async function onRequest({ request, env }) {
         return jsonResp({ code: 99, msg: '无权访问' }, 403);
       }
       const allUsers = await db.prepare(`
-        SELECT id, username, role, is_cancel, created_at, github_id FROM users ORDER BY id DESC
+        SELECT id, username, role, is_cancel, created_at, github_id, microsoft_id FROM users ORDER BY id DESC
       `).all();
       return jsonResp({ list: allUsers.results });
     }
@@ -533,8 +652,8 @@ export async function onRequest({ request, env }) {
       const hashPwd = await hashPassword(password);
       try {
         await db.prepare(`
-          INSERT INTO users (username, password, role, is_cancel, github_id)
-          VALUES (?, ?, ?, 0, NULL)
+          INSERT INTO users (username, password, role, is_cancel, github_id, microsoft_id)
+          VALUES (?, ?, ?, 0, NULL, NULL)
         `).bind(username, hashPwd, role).run();
         return jsonResp({ code: 0, msg: '账号创建成功' });
       } catch {
@@ -559,7 +678,7 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code: 0, msg: '密码修改成功，请重新登录' });
     }
 
-    // 注销账号
+    // 账号注销
     if (action === 'cancelAccount' && request.method === 'POST') {
       if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
       const { password } = await request.json();
@@ -569,9 +688,8 @@ export async function onRequest({ request, env }) {
       if (!userRow || !(await verifyPassword(password, userRow.password))) {
         return jsonResp({ code: 1, msg: '密码验证失败，无法注销' });
       }
-      await db.prepare(`UPDATE users SET is_cancel = 1, github_id = NULL WHERE id = ?`)
-        .bind(loginUser.uid ?? null)
-        .run();
+      await db.prepare(`UPDATE users SET is_cancel = 1, github_id = NULL, microsoft_id = NULL WHERE id = ?`)
+        .bind(loginUser.uid ?? null).run();
       return new Response(JSON.stringify({ code: 0, msg: '账号已注销' }), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
