@@ -1,4 +1,4 @@
-﻿// user.js
+﻿// user.js 加固版：签名会话+安全Cookie+OAuth state+加盐密码
 async function sha256(rawStr) {
   const encoder = new TextEncoder();
   const data = encoder.encode(rawStr);
@@ -7,14 +7,85 @@ async function sha256(rawStr) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function createSessionToken(uid, username, role) {
+// Base64URL 工具（JWT标准编码，剔除填充、+/替换）
+function base64UrlEncode(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+function base64UrlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  return Uint8Array.from(atob(str), c => c.charCodeAt(0));
+}
+
+// 导入HMAC密钥
+async function getHmacKey(secretStr) {
+  const enc = new TextEncoder();
+  const keyBuf = enc.encode(secretStr);
+  return crypto.subtle.importKey(
+    'raw',
+    keyBuf,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify']
+  );
+}
+
+// ========== 加固1：签名会话生成（替代原btoa裸编码）==========
+async function createSignedSessionToken(uid, username, role, secret) {
   const payload = {
     uid,
     username,
     role,
-    exp: Date.now() + 604800000
+    exp: Date.now() + 604800000 // 7天有效期
   };
-  return btoa(JSON.stringify(payload));
+  const payloadJson = JSON.stringify(payload);
+  const payloadB64 = base64UrlEncode(new TextEncoder().encode(payloadJson));
+  const key = await getHmacKey(secret);
+  const signatureBuf = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payloadB64));
+  const sigB64 = base64UrlEncode(signatureBuf);
+  return `${payloadB64}.${sigB64}`;
+}
+
+// 校验签名 + 解析会话，篡改直接返回null
+async function verifySessionToken(tokenStr, secret) {
+  const parts = tokenStr.split('.');
+  if (parts.length !== 2) return null;
+  const [payloadB64, sigB64] = parts;
+  const key = await getHmacKey(secret);
+  const sigBuf = base64UrlDecode(sigB64);
+  const ok = await crypto.subtle.verify(
+    'HMAC',
+    key,
+    sigBuf,
+    new TextEncoder().encode(payloadB64)
+  );
+  if (!ok) return null;
+  try {
+    const payloadRaw = new TextDecoder().decode(base64UrlDecode(payloadB64));
+    const payload = JSON.parse(payloadRaw);
+    if (Date.now() > payload.exp) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+// ========== 加固2：统一安全Cookie构造函数 ==========
+/**
+ * @param {string} token 会话字符串
+ * @param {number} maxAge 秒
+ * @returns {string} Set-Cookie 头字符串
+ */
+function buildSecureSessionCookie(token, maxAge) {
+  // __Host- 强制约束：必须Path=/、不能带Domain、强制Secure
+  return `__Host-blog_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
+}
+// 清空Cookie
+function buildClearSessionCookie() {
+  return `__Host-blog_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
 }
 
 function jsonResp(data, status = 200) {
@@ -24,20 +95,51 @@ function jsonResp(data, status = 200) {
   });
 }
 
-async function getLoginUser(request) {
+// 解析登录用户（自动校验签名）
+async function getLoginUser(request, hmacSecret) {
   const cookieHeader = request.headers.get('Cookie') || '';
-  const match = cookieHeader.match(/blog_session=([^;]+)/);
+  const match = cookieHeader.match(/__Host-blog_session=([^;]+)/);
   if (!match) return null;
-  try {
-    const payload = JSON.parse(atob(match[1]));
-    if (Date.now() > payload.exp) return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  return await verifySessionToken(match[1], hmacSecret);
 }
 
-// 直连GitHub获取access_token，无代理
+// ========== 加固3：密码PBKDF2加盐哈希（替代裸SHA256）==========
+async function hashPassword(rawPwd, salt = null) {
+  const enc = new TextEncoder();
+  let saltBuf;
+  if (!salt) {
+    saltBuf = crypto.getRandomValues(new Uint8Array(16));
+  } else {
+    saltBuf = base64UrlDecode(salt);
+  }
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(rawPwd),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey']
+  );
+  const derived = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: saltBuf, iterations: 100000, hash: 'SHA-256' },
+    key,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+  const hashBuf = await crypto.subtle.exportKey('raw', derived);
+  const hashStr = base64UrlEncode(hashBuf);
+  const saltStr = base64UrlEncode(saltBuf);
+  return `${saltStr}$$${hashStr}`;
+}
+async function verifyPassword(rawPwd, storedHash) {
+  const parts = storedHash.split('$$');
+  if (parts.length !== 2) return false;
+  const [salt, hash] = parts;
+  const newHash = await hashPassword(rawPwd, salt);
+  return newHash.split('$$')[1] === hash;
+}
+
+// GitHub OAuth 接口不变
 async function getGithubToken(code, clientId, clientSecret, redirectUri) {
   const res = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -65,7 +167,6 @@ async function getGithubToken(code, clientId, clientSecret, redirectUri) {
   }
 }
 
-// 直连GitHub用户信息接口，强状态码校验
 async function getGithubUserInfo(accessToken) {
   const res = await fetch("https://api.github.com/user", {
     headers: {
@@ -93,14 +194,48 @@ async function getGithubUserInfo(accessToken) {
   }
 }
 
+// 生成OAuth防CSRF state（带签名）
+async function generateOauthState(secret) {
+  const nonceBuf = crypto.getRandomValues(new Uint8Array(16));
+  const nonce = base64UrlEncode(nonceBuf);
+  const payload = { nonce, ts: Date.now() };
+  const payB64 = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
+  const key = await getHmacKey(secret);
+  const sig = base64UrlEncode(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payB64)));
+  return `${payB64}.${sig}`;
+}
+async function verifyOauthState(stateStr, secret) {
+  const parts = stateStr.split('.');
+  if (parts.length !== 2) return false;
+  const [payB64, sigB64] = parts;
+  const key = await getHmacKey(secret);
+  const ok = await crypto.subtle.verify(
+    'HMAC',
+    key,
+    base64UrlDecode(sigB64),
+    new TextEncoder().encode(payB64)
+  );
+  if (!ok) return false;
+  try {
+    const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(payB64)));
+    // 10分钟过期
+    if (Date.now() - payload.ts > 600000) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function onRequest({ request, env }) {
   try {
     const db = env.DB;
     const url = new URL(request.url);
     const action = url.searchParams.get('action');
-    const loginUser = await getLoginUser(request);
+    const hmacSecret = env.SESSION_HMAC_SECRET;
+    if (!hmacSecret) return jsonResp({ code: 500, msg: "服务端会话密钥未配置" }, 500);
+    const loginUser = await getLoginUser(request, hmacSecret);
 
-    // GitHub登录跳转（纯原生github授权地址，无镜像）
+    // GitHub登录跳转（增加state防CSRF）
     if (action === "githubAuth") {
       const clientId = env.GITHUB_CLIENT_ID;
       const siteOrigin = env.SITE_ORIGIN;
@@ -109,13 +244,15 @@ export async function onRequest({ request, env }) {
       }
       const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
       const githubAuthUrl = new URL("https://github.com/login/oauth/authorize");
+      const state = await generateOauthState(hmacSecret);
       githubAuthUrl.searchParams.set("client_id", clientId);
       githubAuthUrl.searchParams.set("redirect_uri", redirectUri);
       githubAuthUrl.searchParams.set("scope", "read:user");
+      githubAuthUrl.searchParams.set("state", state);
       return Response.redirect(githubAuthUrl.toString(), 302);
     }
 
-    // GitHub授权回调核心逻辑
+    // GitHub授权回调 校验state
     if (action === "githubCallback") {
       const clientId = env.GITHUB_CLIENT_ID;
       const clientSecret = env.GITHUB_CLIENT_SECRET;
@@ -126,8 +263,12 @@ export async function onRequest({ request, env }) {
       }
 
       const code = url.searchParams.get("code");
-      if (!code) {
-        return jsonResp({ code: 500, msg: "授权回调缺少code参数，请重新操作" }, 500);
+      const state = url.searchParams.get("state");
+      if (!code || !state) {
+        return jsonResp({ code: 500, msg: "授权回调参数缺失，请重新操作" }, 500);
+      }
+      if (!(await verifyOauthState(state, hmacSecret))) {
+        return jsonResp({ code: 403, msg: "OAuth请求非法，CSRF校验失败" }, 403);
       }
 
       const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
@@ -142,7 +283,6 @@ export async function onRequest({ request, env }) {
       }
 
       const userInfo = await getGithubUserInfo(tokenData.access_token);
-      // 强拦截：数据缺失直接返回，绝不进入SQL逻辑
       if (
         userInfo.error
         || typeof userInfo.id === "undefined"
@@ -156,7 +296,6 @@ export async function onRequest({ request, env }) {
         }, 500);
       }
 
-      // 强制兜底，防止undefined
       const githubId = String(userInfo.id);
       const githubName = userInfo.login;
       const safeGithubId = githubId ?? null;
@@ -165,39 +304,39 @@ export async function onRequest({ request, env }) {
         SELECT id, username, role, is_cancel FROM users WHERE github_id = ?
       `).bind(safeGithubId).first();
 
-      // 场景1：已登录账号，绑定GitHub
+      // 已登录绑定GitHub
       if (loginUser) {
         if (bindUser) {
           return jsonResp({ code: 500, msg: "该GitHub账号已绑定其他网站账号，无法重复绑定" }, 500);
         }
         await db.prepare(`UPDATE users SET github_id = ? WHERE id = ?`)
-          .bind(safeGithubId, loginUser.id ?? null)
+          .bind(safeGithubId, loginUser.uid ?? null)
           .run();
-        const newToken = createSessionToken(loginUser.id, loginUser.username, loginUser.role);
+        const newToken = await createSignedSessionToken(loginUser.uid, loginUser.username, loginUser.role, hmacSecret);
         return new Response(null, {
           status: 302,
           headers: {
             Location: `${siteOrigin}/account.html`,
-            "Set-Cookie": `blog_session=${newToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`
+            "Set-Cookie": buildSecureSessionCookie(newToken, 86400)
           }
         });
       }
 
-      // 场景2：未登录，GitHub快捷登录
+      // 未登录已有绑定账号
       if (bindUser) {
         if (bindUser.is_cancel === 1 || bindUser.role === "banned") {
           return jsonResp({ code: 500, msg: "该绑定账号已注销或封禁，禁止登录" }, 500);
         }
-        const sessionToken = createSessionToken(bindUser.id, bindUser.username, bindUser.role);
+        const sessionToken = await createSignedSessionToken(bindUser.id, bindUser.username, bindUser.role, hmacSecret);
         return new Response(null, {
           status: 302,
           headers: {
             Location: `${siteOrigin}/`,
-            "Set-Cookie": `blog_session=${sessionToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`
+            "Set-Cookie": buildSecureSessionCookie(sessionToken, 86400)
           }
         });
       } else {
-        // 自动新建账号，github_id兜底null
+        // 自动新建账号
         let newUser;
         try {
           await db.prepare(`
@@ -217,23 +356,23 @@ export async function onRequest({ request, env }) {
             SELECT id, username, role FROM users WHERE github_id = ?
           `).bind(safeGithubId).first();
         }
-        const sessionToken = createSessionToken(newUser.id, newUser.username, newUser.role);
+        const sessionToken = await createSignedSessionToken(newUser.id, newUser.username, newUser.role, hmacSecret);
         return new Response(null, {
           status: 302,
           headers: {
             Location: `${siteOrigin}/`,
-            "Set-Cookie": `blog_session=${sessionToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`
+            "Set-Cookie": buildSecureSessionCookie(sessionToken, 86400)
           }
         });
       }
     }
 
-    // 解绑GitHub账号接口（前端account.html调用）
+    // 解绑GitHub
     if (action === "unbindGithub" && request.method === "POST") {
       if (!loginUser) {
         return jsonResp({ code: 99, msg: "请先登录" }, 401);
       }
-      const uid = loginUser.id ?? null;
+      const uid = loginUser.uid ?? null;
       await db.prepare(`UPDATE users SET github_id = NULL WHERE id = ?`)
         .bind(uid)
         .run();
@@ -245,12 +384,12 @@ export async function onRequest({ request, env }) {
       return new Response(JSON.stringify({ code: 0, msg: '已退出登录' }), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
-          'Set-Cookie': 'blog_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax'
+          'Set-Cookie': buildClearSessionCookie()
         }
       });
     }
 
-    // 登录校验：返回github_id供前端渲染绑定状态
+    // 登录校验
     if (action === 'check' && request.method === 'GET') {
       if (!loginUser) return jsonResp({ login: false });
       const userInfo = await db.prepare(`
@@ -260,7 +399,7 @@ export async function onRequest({ request, env }) {
         return new Response(JSON.stringify({ login: false, banned: true }), {
           headers: {
             'Content-Type': 'application/json; charset=utf-8',
-            'Set-Cookie': 'blog_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax'
+            'Set-Cookie': buildClearSessionCookie()
           }
         });
       }
@@ -273,35 +412,28 @@ export async function onRequest({ request, env }) {
       });
     }
 
-        // 游客注册
+    // 游客注册
     if (action === 'register' && request.method === 'POST') {
       const { username, password, email, code } = await request.json();
-      
-      // 验证邮箱验证码
       if (!email || !code) {
         return jsonResp({ code: 1, msg: '邮箱和验证码不能为空' });
       }
-      
       const verifyRecord = await db.prepare(`
         SELECT code, expires_at FROM email_verifications 
         WHERE email = ? 
         ORDER BY id DESC 
         LIMIT 1
       `).bind(email).first();
-      
       if (!verifyRecord) {
         return jsonResp({ code: 1, msg: '请先获取验证码' });
       }
-      
       if (verifyRecord.code !== code) {
         return jsonResp({ code: 1, msg: '验证码错误' });
       }
-      
       if (new Date(verifyRecord.expires_at).getTime() < Date.now()) {
         return jsonResp({ code: 1, msg: '验证码已过期，请重新获取' });
       }
-      
-      const hashPwd = await sha256(password);
+      const hashPwd = await hashPassword(password);
       try {
         await db.prepare(`
           INSERT INTO users (username, password, role, is_cancel, github_id, email)
@@ -316,25 +448,26 @@ export async function onRequest({ request, env }) {
     // 账号密码登录
     if (action === 'login' && request.method === 'POST') {
       const { username, password } = await request.json();
-      const hashPwd = await sha256(password);
       const row = await db.prepare(`
-        SELECT id, username, role, is_cancel FROM users WHERE username = ? AND password = ?
-      `).bind(username, hashPwd).first();
+        SELECT id, username, role, is_cancel, password FROM users WHERE username = ?
+      `).bind(username).first();
 
       if (!row) return jsonResp({ code: 1, msg: '账号或密码错误' });
+      const pwdOk = await verifyPassword(password, row.password);
+      if (!pwdOk) return jsonResp({ code: 1, msg: '账号或密码错误' });
       if (row.role === "banned") return jsonResp({ code: 2, msg: '账号已封禁，禁止登录' });
       if (row.is_cancel === 1) return jsonResp({ code: 3, msg: '账号已注销，无法登录' });
 
-      const sessionToken = createSessionToken(row.id, row.username, row.role);
+      const sessionToken = await createSignedSessionToken(row.id, row.username, row.role, hmacSecret);
       return new Response(JSON.stringify({ code: 0, msg: '登录成功' }), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
-          'Set-Cookie': `blog_session=${sessionToken}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`
+          'Set-Cookie': buildSecureSessionCookie(sessionToken, 86400)
         }
       });
     }
 
-    // 管理员修改角色
+    // 修改角色
     if (action === 'setRole' && request.method === 'POST') {
       if (!loginUser) return jsonResp({ code: 99, msg: '无操作权限，仅管理员可用' }, 403);
       const { targetUid, newRole } = await request.json();
@@ -358,7 +491,7 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code: 0, msg: '角色修改成功' });
     }
 
-    // 获取全部用户列表
+    // 用户列表
     if (action === 'userList' && request.method === 'GET') {
       if (!loginUser || loginUser.role === 'guest' || loginUser.role === 'banned') {
         return jsonResp({ code: 99, msg: '无权访问' }, 403);
@@ -397,7 +530,7 @@ export async function onRequest({ request, env }) {
       const allowRoles = ['admin', 'writer', 'guest', 'banned'];
       if (role === 'owner') return jsonResp({ code: 1, msg: '不能创建所有者账号' });
       if (!allowRoles.includes(role)) return jsonResp({ code: 1, msg: '非法角色' });
-      const hashPwd = await sha256(password);
+      const hashPwd = await hashPassword(password);
       try {
         await db.prepare(`
           INSERT INTO users (username, password, role, is_cancel, github_id)
@@ -413,29 +546,27 @@ export async function onRequest({ request, env }) {
     if (action === 'changePwd' && request.method === 'POST') {
       if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
       const { oldPwd, newPwd } = await request.json();
-      const oldHash = await sha256(oldPwd);
       const userRow = await db.prepare(`
         SELECT password FROM users WHERE id = ?
       `).bind(loginUser.uid ?? null).first();
-      if (!userRow || userRow.password !== oldHash) {
+      if (!userRow || !(await verifyPassword(oldPwd, userRow.password))) {
         return jsonResp({ code: 1, msg: '原密码错误' });
       }
-      const newHash = await sha256(newPwd);
+      const newHash = await hashPassword(newPwd);
       await db.prepare(`UPDATE users SET password = ? WHERE id = ?`)
         .bind(newHash, loginUser.uid ?? null)
         .run();
       return jsonResp({ code: 0, msg: '密码修改成功，请重新登录' });
     }
 
-    // 注销账号（同步清空github_id）
+    // 注销账号
     if (action === 'cancelAccount' && request.method === 'POST') {
       if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
       const { password } = await request.json();
-      const pwdHash = await sha256(password);
       const userRow = await db.prepare(`
         SELECT password FROM users WHERE id = ?
       `).bind(loginUser.uid ?? null).first();
-      if (!userRow || userRow.password !== pwdHash) {
+      if (!userRow || !(await verifyPassword(password, userRow.password))) {
         return jsonResp({ code: 1, msg: '密码验证失败，无法注销' });
       }
       await db.prepare(`UPDATE users SET is_cancel = 1, github_id = NULL WHERE id = ?`)
@@ -444,7 +575,7 @@ export async function onRequest({ request, env }) {
       return new Response(JSON.stringify({ code: 0, msg: '账号已注销' }), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
-          'Set-Cookie': 'blog_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax'
+          'Set-Cookie': buildClearSessionCookie()
         }
       });
     }
