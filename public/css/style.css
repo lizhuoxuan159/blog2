@@ -2,51 +2,64 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: system-ui, -apple-system, sans-serif;
+  /* Âå¹ÈÄ¬ÈÏ×ÖÌå */
+  font-family: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
+
 body {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  background-attachment: fixed;
+  /* Âå¹ÈÒ³Ãæµ×É«£ºÇ³»Ò°× */
+  background-color: #f5f7fa;
   padding: 30px 15px;
 }
+
 .glass {
-  background: rgba(255, 255, 255, 1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 1);
-  border-radius: 16px;
+  /* Ìæ»»²£Á§Ð§¹ûÎªÂå¹È¿¨Æ¬ÑùÊ½ */
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   padding: 24px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0,1);
-  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  color: #333333;
 }
+
 .glass-btn {
   padding: 10px 20px;
-  border: 1px solid rgba(255,255,255,1);
-  background: rgba(255,255,255,1);
-  backdrop-filter: blur(8px);
-  color: white;
-  border-radius: 8px;
+  border: 1px solid #3498db;
+  background: #3498db;
+  color: #ffffff;
+  border-radius: 6px;
   cursor: pointer;
   transition: 0.2s ease;
+  font-size: 14px;
 }
+
 .glass-btn:hover {
-  background: rgba(255,255,255,1);
+  background: #2980b9;
+  border-color: #2980b9;
 }
+
 input, textarea {
   width: 100%;
   padding: 12px;
   margin: 8px 0;
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.25);
-  border-radius: 10px;
-  color: #fff;
+  background: #ffffff;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  color: #333;
   outline: none;
   font-size: 15px;
+  transition: border-color 0.2s;
 }
+
+input:focus, textarea:focus {
+  border-color: #3498db;
+}
+
 input::placeholder, textarea::placeholder {
-  color: rgba(255,255,255,0.25);
+  color: #c0c4cc;
 }
+
 nav {
   display: flex;
   gap: 12px;
@@ -54,23 +67,33 @@ nav {
   justify-content: center;
   flex-wrap: wrap;
 }
+
 .container {
   max-width: 800px;
   margin: 0 auto;
 }
+
 .post-item {
   margin-bottom: 16px;
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
+
 .post-item:hover {
   transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
+
 a {
-  color: #fff;
+  color: #3498db;
+  text-decoration: none;
 }
+a:hover {
+  text-decoration: underline;
+}
+
 hr {
   border: none;
-  border-top: 1px solid rgba(255,255,255,0.25);
+  border-top: 1px solid #e5e7eb;
   margin: 16px 0;
 }
