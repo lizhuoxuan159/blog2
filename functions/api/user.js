@@ -1,4 +1,4 @@
-// user.js
+﻿// user.js
 async function sha256(rawStr) {
   const encoder = new TextEncoder();
   const data = encoder.encode(rawStr);
@@ -273,15 +273,40 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 游客注册
+        // 游客注册
     if (action === 'register' && request.method === 'POST') {
-      const { username, password } = await request.json();
+      const { username, password, email, code } = await request.json();
+      
+      // 验证邮箱验证码
+      if (!email || !code) {
+        return jsonResp({ code: 1, msg: '邮箱和验证码不能为空' });
+      }
+      
+      const verifyRecord = await db.prepare(`
+        SELECT code, expires_at FROM email_verifications 
+        WHERE email = ? 
+        ORDER BY id DESC 
+        LIMIT 1
+      `).bind(email).first();
+      
+      if (!verifyRecord) {
+        return jsonResp({ code: 1, msg: '请先获取验证码' });
+      }
+      
+      if (verifyRecord.code !== code) {
+        return jsonResp({ code: 1, msg: '验证码错误' });
+      }
+      
+      if (new Date(verifyRecord.expires_at).getTime() < Date.now()) {
+        return jsonResp({ code: 1, msg: '验证码已过期，请重新获取' });
+      }
+      
       const hashPwd = await sha256(password);
       try {
         await db.prepare(`
-          INSERT INTO users (username, password, role, is_cancel, github_id)
-          VALUES (?, ?, 'guest', 0, NULL)
-        `).bind(username, hashPwd).run();
+          INSERT INTO users (username, password, role, is_cancel, github_id, email)
+          VALUES (?, ?, 'guest', 0, NULL, ?)
+        `).bind(username, hashPwd, email).run();
         return jsonResp({ code: 0, msg: '注册成功，请登录' });
       } catch (e) {
         return jsonResp({ code: 1, msg: '用户名已存在' });
