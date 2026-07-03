@@ -28,6 +28,20 @@
     </div>
 
     <hr style="margin:25px 0">
+    <!-- 新增微软绑定区域 -->
+    <h3>Microsoft 账号绑定</h3>
+    <p style="opacity:0.8">绑定后可直接使用微软/Outlook账号快捷登录</p>
+    <div id="microsoftBindArea">
+      <a id="msBindBtnWrap" href="/api/user?action=microsoftAuth">
+        <button class="glass-btn" style="background:rgba(0,120,212,0.2)">绑定 Microsoft 账号</button>
+      </a>
+      <div id="msBindInfoWrap" style="display:none;margin-top:12px;">
+        <p>已绑定 Microsoft ID：<span id="msName" style="font-weight:bold;color:#0078d4"></span></p>
+        <button class="glass-btn" style="background:rgba(255,100,100,0.2);margin-top:8px" onclick="unbindMicrosoft()">解绑Microsoft</button>
+      </div>
+    </div>
+
+    <hr style="margin:25px 0">
     <h3>修改密码</h3>
     <input type="password" id="oldPwd" placeholder="当前密码">
     <input type="password" id="newPwd" placeholder="新密码">
@@ -52,6 +66,7 @@ let userData = null;
     return;
   }
   renderGithubBind();
+  renderMicrosoftBind(); // 新增渲染微软绑定状态
 })();
 
 function renderGithubBind() {
@@ -68,9 +83,36 @@ function renderGithubBind() {
   }
 }
 
+// 微软绑定状态渲染函数
+function renderMicrosoftBind() {
+  const msBindBtnWrap = document.getElementById('msBindBtnWrap');
+  const msBindInfoWrap = document.getElementById('msBindInfoWrap');
+  const msNameText = document.getElementById('msName');
+  if (userData.microsoft_id && userData.microsoft_id !== null) {
+    msBindBtnWrap.style.display = 'none';
+    msBindInfoWrap.style.display = 'block';
+    msNameText.innerText = userData.microsoft_id;
+  } else {
+    msBindBtnWrap.style.display = 'block';
+    msBindInfoWrap.style.display = 'none';
+  }
+}
+
 async function unbindGithub() {
   if (!confirm('确认解绑当前GitHub账号？解绑后无法再用该GitHub登录本站')) return;
   const res = await fetch('/api/user?action=unbindGithub', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const ret = await res.json();
+  alert(ret.msg);
+  if (ret.code === 0) location.reload();
+}
+
+// 微软解绑接口函数
+async function unbindMicrosoft() {
+  if (!confirm('确认解绑当前Microsoft账号？解绑后无法再用该微软账号登录本站')) return;
+  const res = await fetch('/api/user?action=unbindMicrosoft', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
