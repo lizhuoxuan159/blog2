@@ -3,7 +3,7 @@ compatibility_date = "2025-10-01"
 pages_build_output_dir = "public"
 # 运行时明文变量（function 可通过 env.xxx 获取）
 [vars]
-465cece5-8667-4d96-8f43-c930d89a5fd3
+MS_CLIENT_ID=465cece5-8667-4d96-8f43-c930d89a5fd3
 GITHUB_CLIENT_ID = "Ov23lid2fnvzCXAcXZ0J"
 SITE_ORIGIN = "https://blog.lizhuoxuan.dpdns.org"
 [[d1_databases]]
