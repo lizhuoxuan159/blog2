@@ -1,4 +1,4 @@
-// 哈希加密函数
+﻿// 哈希加密函数
 async function sha256(rawStr) {
   const encoder = new TextEncoder();
   const data = encoder.encode(rawStr);
@@ -59,7 +59,7 @@ async function sendVerifyCode(targetEmail, code, API_KEY) {
       "User-Agent": "Cloudflare-Workers"
     },
     body: JSON.stringify({
-      from: "竹轩博客系统 <notify@resend.dev>",
+      from: "<notify@blog.lizhuoxuan.dpdns.org>",
       to: targetEmail,
       subject: "账号注册登录验证码",
       html: `
