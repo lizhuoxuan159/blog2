@@ -54,11 +54,11 @@ async function verifySessionToken(tokenStr, secret) {
   if (parts.length !== 2) return null;
   const [payloadB64, sigB64] = parts;
   const key = await getHmacKey(secret);
-  const sigBuf = base64UrlDecode(sigB64);
+  const sigRaw = base64UrlDecode(sigB64);
   const ok = await crypto.subtle.verify(
     'HMAC',
     key,
-    sigBuf,
+    sigRaw,
     new TextEncoder().encode(payloadB64)
   );
   if (!ok) return null;
@@ -95,7 +95,7 @@ function jsonResp(data, status = 200) {
 
 // 解析当前登录用户
 async function getLoginUser(request, hmacSecret) {
-  const cookieHeader = request.headers.get('Cookie') || '';
+  const cookieHeader = request.headers.get("Cookie") || "";
   const match = cookieHeader.match(/__Host-blog_session=([^;]+)/);
   if (!match) return null;
   return await verifySessionToken(match[1], hmacSecret);
@@ -267,13 +267,13 @@ const CODE_EXPIRE = 5 * 60 * 1000;
 const RATE_LIMIT = 60 * 1000;
 const EMAIL_REG = /^[a-zA-Z0-9_\-\.]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-\.]+$/;
 
-// 6位验证码
+// 6位数字验证码
 function generateSixCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-// Resend发信
-async function sendMailByResend(targetEmail, code, apiKey) {
+// Resend通用发信
+async function sendMailByResend(targetEmail, subject, html, apiKey) {
   const resp = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -282,19 +282,42 @@ async function sendMailByResend(targetEmail, code, apiKey) {
       "User-Agent": "Cloudflare-Pages-Worker"
     },
     body: JSON.stringify({
-      from: "Notify <notify@resend.dev>",
+      from: "竹轩博客账号系统 <notify@resend.dev>",
       to: targetEmail,
-      subject: "账号注册安全验证码",
-      html: `
-        <div style="padding: 15px;font-family: system-ui;">
-          <h3>注册验证码</h3>
-          <p>本次验证码：<strong style="font-size:20px;color:#1677ff">${code}</strong></p>
-          <p>验证码5分钟内有效，请勿转发给他人，非本人操作可直接忽略。</p>
-        </div>
-      `
+      subject: subject,
+      html: html
     })
   });
   return await resp.json();
+}
+
+// 新设备登录提醒邮件
+async function sendNewLoginAlert(userEmail, username, ip, apiKey) {
+  const now = new Date().toLocaleString("zh-CN");
+  const html = `
+    <div style="padding: 15px;font-family: system-ui;">
+      <h3>账号安全提醒：检测到新设备登录</h3>
+      <p>你的账号 <strong>${username}</strong> 在新设备完成登录</p>
+      <p>登录IP：${ip}</p>
+      <p>登录时间：${now}</p>
+      <p>如非本人操作，请立即重置密码，防止账号被盗。</p>
+    </div>
+  `;
+  return sendMailByResend(userEmail, "【安全提醒】新设备登录通知", html, apiKey);
+}
+
+// 密码重置邮件（带重置链接）
+async function sendResetPasswordMail(userEmail, username, resetUrl, apiKey) {
+  const html = `
+    <div style="padding:15px;font-family:system-ui;">
+      <h3>密码重置申请</h3>
+      <p>你的账号 <strong>${username}</strong> 提交了密码重置请求</p>
+      <p>点击下方链接重置密码，链接15分钟内有效：</p>
+      <p><a href="${resetUrl}" target="_blank" style="font-size:16px;color:#1677ff">${resetUrl}</a></p>
+      <p>若未本人操作，直接忽略本条邮件，密码不会变更。</p>
+    </div>
+  `;
+  return sendMailByResend(userEmail, "【密码重置】博客账号重置链接", html, apiKey);
 }
 
 export async function onRequest({ request, env }) {
@@ -313,6 +336,7 @@ export async function onRequest({ request, env }) {
     const siteOrigin = env.SITE_ORIGIN;
     const reqMethod = request.method;
     const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+    const resendKey = env.RESEND_API_KEY;
 
     if (reqMethod === "OPTIONS") return jsonResp(null);
 
@@ -366,7 +390,7 @@ export async function onRequest({ request, env }) {
       const githubId = String(userInfo.id);
       const githubName = userInfo.login;
       const safeGithubId = githubId ?? null;
-      let bindUser = await db.prepare(`SELECT id, username, role, is_cancel FROM users WHERE github_id = ?`).bind(safeGithubId).first();
+      let bindUser = await db.prepare(`SELECT id, username, role, is_cancel, email FROM users WHERE github_id = ?`).bind(safeGithubId).first();
 
       if (flowType === "bind") {
         if (!loginUser) return Response.redirect(`${siteOrigin}/login.html`, 302);
@@ -379,6 +403,10 @@ export async function onRequest({ request, env }) {
         if (bindUser) {
           if (bindUser.is_cancel === 1 || bindUser.role === "banned") return jsonResp({ code: 500, msg: "该绑定账号已注销或封禁，禁止登录" }, 500);
           const sessionToken = await createSignedSessionToken(bindUser.id, bindUser.username, bindUser.role, hmacSecret);
+          // 新登录发送设备提醒邮件
+          if(resendKey && bindUser.email){
+            await sendNewLoginAlert(bindUser.email, bindUser.username, clientIp, resendKey);
+          }
           return new Response(null, { status: 302, headers: { Location: `${siteOrigin}/`, "Set-Cookie": buildSecureSessionCookie(sessionToken, 86400) } });
         } else {
           let newUser;
@@ -449,31 +477,38 @@ export async function onRequest({ request, env }) {
       const msUid = msUser.id;
       const msName = msUser.displayName || `MS_${msUid.slice(-6)}`;
 
-      let bindUser = await db.prepare(`SELECT id, username, role, is_cancel FROM users WHERE microsoft_id = ?`).bind(msUid).first();
+      let bindUser = await db.prepare(`SELECT id, username, role, is_cancel, email FROM users WHERE microsoft_id = ?`).bind(msUid).first();
+      // 绑定流程
       if (flowType === "bind") {
         if (!loginUser) return Response.redirect(`${siteOrigin}/login.html`, 302);
-        if (bindUser) return jsonResp({ code: 500, msg: "该微软账号已绑定其他账号" }, 500);
+        if (bindUser) return jsonResp({ code: 500, msg: "该微软账号已绑定其他账号" });
         await db.prepare(`UPDATE users SET microsoft_id = ? WHERE id = ?`).bind(msUid, loginUser.uid).run();
         const newToken = await createSignedSessionToken(loginUser.uid, loginUser.username, loginUser.role, hmacSecret);
         return new Response(null, { status: 302, headers: { Location: `${siteOrigin}/account.html`, "Set-Cookie": buildSecureSessionCookie(newToken, 86400) } });
       }
+      // 登录流程
       if (flowType === "login") {
         if (bindUser) {
-          if (bindUser.is_cancel === 1 || bindUser.role === "banned") return jsonResp({ code: 500, msg: "账号已封禁或注销" }, 500);
+          if (bindUser.is_cancel === 1 || bindUser.role === "banned") return jsonResp({ code: 500, msg: "账号已封禁或注销" });
           const sessionToken = await createSignedSessionToken(bindUser.id, bindUser.username, bindUser.role, hmacSecret);
+          // 新设备登录提醒邮件
+          if (resendKey && bindUser.email) {
+            await sendNewLoginAlert(bindUser.email, bindUser.username, clientIp, resendKey);
+          }
+          return new Response(null, { status: 302, headers: { Location: `${siteOrigin}/`, "Set-Cookie": buildSecureSessionCookie(sessionToken, 86400) } });
+        } else {
+          let newUser;
+          try {
+            await db.prepare(`INSERT INTO users (username, password, role, is_cancel, microsoft_id) VALUES (?, ?, 'guest', 0, ?)`).bind(msName, "", msUid).run();
+            newUser = await db.prepare(`SELECT id, username, role FROM users WHERE microsoft_id = ?`).bind(msUid).first();
+          } catch (e) {
+            const fixName = `MS_${msUid.slice(-6)}`;
+            await db.prepare(`INSERT INTO users (username, password, role, is_cancel, microsoft_id) VALUES (?, ?, 'guest', 0, ?)`).bind(fixName, "", msUid).run();
+            newUser = await db.prepare(`SELECT id, username, role FROM users WHERE microsoft_id = ?`).bind(msUid).first();
+          }
+          const sessionToken = await createSignedSessionToken(newUser.id, newUser.username, newUser.role, hmacSecret);
           return new Response(null, { status: 302, headers: { Location: `${siteOrigin}/`, "Set-Cookie": buildSecureSessionCookie(sessionToken, 86400) } });
         }
-        let newUser;
-        try {
-          await db.prepare(`INSERT INTO users (username, password, role, is_cancel, microsoft_id) VALUES (?, ?, 'guest', 0, ?)`).bind(msName, "", msUid).run();
-          newUser = await db.prepare(`SELECT id, username, role FROM users WHERE microsoft_id = ?`).bind(msUid).first();
-        } catch (e) {
-          const fixName = `MS_${msUid.slice(-6)}`;
-          await db.prepare(`INSERT INTO users (username, password, role, is_cancel, microsoft_id) VALUES (?, ?, 'guest', 0, ?)`).bind(fixName, "", msUid).run();
-          newUser = await db.prepare(`SELECT id, username, role FROM users WHERE microsoft_id = ?`).bind(msUid).first();
-        }
-        const sessionToken = await createSignedSessionToken(newUser.id, newUser.username, newUser.role, hmacSecret);
-        return new Response(null, { status: 302, headers: { Location: `${siteOrigin}/`, "Set-Cookie": buildSecureSessionCookie(sessionToken, 86400) } });
       }
     }
 
@@ -506,11 +541,11 @@ export async function onRequest({ request, env }) {
 
     // 登录状态检测
     if (action === 'check') {
-      if (!loginUser) return jsonResp({ code:0, login: false });
+      if (!loginUser) return jsonResp({ code: 0, login: false });
       if (!db) return jsonResp({ code: 500, msg: "数据库未绑定", login: false }, 500);
-      const userInfo = await db.prepare(`SELECT role, is_cancel, github_id, microsoft_id FROM users WHERE id = ?`).bind(loginUser.uid ?? null).first();
+      const userInfo = await db.prepare(`SELECT role, is_cancel, github_id, microsoft_id, email FROM users WHERE id = ?`).bind(loginUser.uid ?? null).first();
       if (!userInfo || userInfo.role === "banned" || userInfo.is_cancel === 1) {
-        return new Response(JSON.stringify({ code:0, login: false, banned: true }), {
+        return new Response(JSON.stringify({ code: 0, login: false, banned: true }), {
           headers: {
             'Content-Type': 'application/json; charset=utf-8',
             'Set-Cookie': buildClearSessionCookie()
@@ -524,11 +559,12 @@ export async function onRequest({ request, env }) {
         username: loginUser.username,
         role: userInfo.role,
         github_id: userInfo.github_id,
-        microsoft_id: userInfo.microsoft_id
+        microsoft_id: userInfo.microsoft_id,
+        email: userInfo.email
       });
     }
 
-    // 发送邮箱验证码（修复入库失败）
+    // 发送邮箱验证码（注册用）
     if (action === "sendEmailCode") {
       if (reqMethod === "GET") return jsonResp({ code: 0, msg: "接口运行正常，请POST提交请求" });
       if (reqMethod !== "POST") return jsonResp({ code: 405, msg: "非法请求方式" }, 405);
@@ -546,11 +582,9 @@ export async function onRequest({ request, env }) {
       if (!EMAIL_REG.test(realEmail)) return jsonResp({ code: 400, msg: "邮箱格式不正确" });
 
       const nowTime = Date.now();
-      (async () => {
-        for (const [key, item] of codeStorage.entries()) {
-          if (nowTime > item.expire) codeStorage.delete(key);
-        }
-      })();
+      for (const [key, item] of codeStorage.entries()) {
+        if (nowTime > item.expire) codeStorage.delete(key);
+      }
 
       const limitKey = `${clientIp}_${realEmail}`;
       const record = codeStorage.get(limitKey);
@@ -580,23 +614,62 @@ export async function onRequest({ request, env }) {
 
       if (!db) return jsonResp({ code: 500, msg: "D1数据库未绑定，无法存储验证码记录" }, 500);
       try {
-        const expireTs = String(nowTime + CODE_EXPIRE);
         await db.prepare(`INSERT INTO email_verifications (email, code, expires_at) VALUES (?, ?, ?)`)
-          .bind(realEmail, code, expireTs).run();
+          .bind(realEmail, code, new Date(nowTime + CODE_EXPIRE)).run();
       } catch (dbErr) {
         return jsonResp({
           code: 500,
           msg: "验证码入库失败",
-          detail: `错误信息：${dbErr.message}\n堆栈：${dbErr.stack}`
+          detail: `错误信息：${dbErr.message}`
         }, 500);
       }
 
       return jsonResp({ code: 0, msg: "验证码已发送至邮箱，5分钟内有效" });
     }
 
-    // 注册（适配时间戳校验）
+    // ========== 新增 forgetPassword 忘记密码接口（生成重置链接邮件） ==========
+    if (action === "forgetPassword") {
+      if (reqMethod !== "POST") return jsonResp({ code: 405, msg: "仅支持POST请求" }, 405);
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return jsonResp({ code: 400, msg: "请求参数非法" }, 400);
+      }
+      const { email } = body;
+      if (!email || !EMAIL_REG.test(email)) return jsonResp({ code: 400, msg: "请输入合法邮箱地址" });
+      const targetEmail = email.toLowerCase().trim();
+
+      // 查询用户是否存在
+      const user = await db.prepare(`SELECT id, username FROM users WHERE email = ?`).bind(targetEmail).first();
+      if (!user) return jsonResp({ code: 0, msg: "若该邮箱已注册，重置链接将发送至邮箱" });
+
+      // 生成重置令牌 15分钟有效期
+      const resetExpire = Date.now() + 15 * 60 * 1000;
+      const resetPayload = JSON.stringify({ uid: user.id, exp: resetExpire });
+      const resetB64 = base64UrlEncode(new TextEncoder().encode(resetPayload));
+      const hmacKey = await getHmacKey(env.SESSION_HMAC_SECRET);
+      const resetSig = base64UrlEncode(await crypto.subtle.sign("HMAC", hmacKey, new TextEncoder().encode(resetB64)));
+      const resetToken = `${resetB64}.${resetSig}`;
+      const resetUrl = `${siteOrigin}/reset-password?token=${resetToken}`;
+
+      // 发送重置邮件
+      const resendKey = env.RESEND_API_KEY;
+      if (!resendKey) return jsonResp({ code: 500, msg: "邮件密钥未配置" }, 500);
+      const mailRes = await sendResetPasswordMail(targetEmail, user.username, resetUrl, resendKey);
+      if (mailRes.error) {
+        return jsonResp({ code: 500, msg: "重置邮件发送失败", detail: mailRes.message }, 500);
+      }
+
+      // 存入数据库重置记录
+      await db.prepare(`INSERT INTO email_verifications (email, code, expires_at) VALUES (?, ?, ?)`)
+        .bind(targetEmail, resetToken, new Date(resetExpire)).run();
+
+      return jsonResp({ code: 0, msg: "重置密码链接已发送至邮箱，15分钟内有效" });
+    }
+
+    // 注册
     if (action === 'register' && reqMethod === 'POST') {
-      if (!db) return jsonResp({ code: 500, msg: "数据库未绑定" }, 500);
       const { username, password, email, code } = await request.json();
       if (!email || !code) return jsonResp({ code: 1, msg: '邮箱和验证码不能为空' });
       const verifyRecord = await db.prepare(`SELECT code, expires_at FROM email_verifications WHERE email = ? ORDER BY id DESC LIMIT 1`).bind(email).first();
@@ -613,24 +686,28 @@ export async function onRequest({ request, env }) {
       }
     }
 
-    // 登录
+    // 账号密码登录（登录成功发送新设备提醒邮件）
     if (action === 'login' && reqMethod === 'POST') {
-      if (!db) return jsonResp({ code: 500, msg: "数据库未绑定" }, 500);
       const { username, password } = await request.json();
-      const row = await db.prepare(`SELECT id, username, role, is_cancel, password FROM users WHERE username = ?`).bind(username).first();
+      const row = await db.prepare(`SELECT id, username, role, is_cancel, password, email FROM users WHERE username = ?`).bind(username).first();
       if (!row) return jsonResp({ code: 1, msg: '账号或密码错误' });
       const pwdOk = await verifyPassword(password, row.password);
       if (!pwdOk) return jsonResp({ code: 1, msg: '账号或密码错误' });
       if (row.role === "banned") return jsonResp({ code: 2, msg: '账号已封禁，禁止登录' });
       if (row.is_cancel === 1) return jsonResp({ code: 3, msg: '账号已注销，无法登录' });
 
+      // 旧密码自动升级为PBKDF2
       if (!row.password.includes('$$')) {
         const newSecurePwd = await hashPassword(password);
         await db.prepare(`UPDATE users SET password = ? WHERE id = ?`).bind(newSecurePwd, row.id).run();
       }
 
       const sessionToken = await createSignedSessionToken(row.id, row.username, row.role, hmacSecret);
-      return new Response(JSON.stringify({ code: 0, msg: '登录成功' }), {
+      // 登录提醒邮件
+      if (resendKey && row.email) {
+        await sendNewLoginAlert(row.email, row.username, clientIp, resendKey);
+      }
+      return new Response(JSON.stringify({ code: 0, msg: "登录成功" }), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
           'Set-Cookie': buildSecureSessionCookie(sessionToken, 86400)
@@ -638,9 +715,9 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 修改角色（权限修复：仅owner可分配admin）
+    // 管理员修改角色
     if (action === 'setRole' && reqMethod === 'POST') {
-      if (!loginUser) return jsonResp({ code: 99, msg: '无操作权限，仅管理员/所有者可用' }, 403);
+      if (!loginUser) return jsonResp({ code: 99, msg: "无操作权限，仅管理员/所有者可用" }, 403);
       if (!db) return jsonResp({ code: 500, msg: "数据库未绑定" }, 500);
       const { targetUid, newRole } = await request.json();
       const allowRoles = ['owner', 'admin', 'writer', 'guest', 'banned'];
@@ -649,13 +726,11 @@ export async function onRequest({ request, env }) {
       if (!targetUser) return jsonResp({ code: 1, msg: '用户不存在' });
 
       const isLoginOwner = loginUser.role === "owner";
-      // 任何人不能设置owner
       if (newRole === "owner") {
         return jsonResp({ code: 98, msg: "无法授予所有者权限" }, 403);
       }
-      // admin权限限制
       if (!isLoginOwner) {
-        if (targetUser.role === 'owner') return jsonResp({ code: 98, msg: '无权修改所有者账号权限' }, 403);
+        if (targetUser.role === 'owner') return jsonResp({ code: 98, msg: "无权修改所有者账号权限" }, 403);
         if (newRole === "admin") return jsonResp({ code: 98, msg: "管理员不能授予管理员权限" }, 403);
       }
 
@@ -663,7 +738,7 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code: 0, msg: '角色修改成功' });
     }
 
-    // 用户列表（修复前端undefined）
+    // 用户列表
     if (action === 'userList' && reqMethod === 'GET') {
       if (!loginUser) return jsonResp({ code: 99, msg: '未登录，无权访问' }, 403);
       const denyRoles = ['guest', 'banned'];
@@ -691,7 +766,7 @@ export async function onRequest({ request, env }) {
       }
     }
 
-    // 删除用户（核心修复：owner可删admin，admin不能删admin/owner，分步捕获错误）
+    // 删除用户
     if (action === 'deleteUser' && reqMethod === 'POST') {
       if (!loginUser || loginUser.role === 'guest' || loginUser.role === 'banned') {
         return jsonResp({ code: 99, msg: '无权操作' }, 403);
@@ -731,11 +806,9 @@ export async function onRequest({ request, env }) {
       const isLoginOwner = loginUser.role === 'owner';
       const targetIsOwner = targetUser.role === 'owner';
 
-      // 所有人禁止删除owner
       if (targetIsOwner) {
         return jsonResp({ code: 98, msg: '不允许删除所有者账号' }, 403);
       }
-      // admin 不能删除其他admin
       if (!isLoginOwner && targetUser.role === 'admin') {
         return jsonResp({ code: 98, msg: '管理员无法删除其他管理员' }, 403);
       }
@@ -792,7 +865,7 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code: 0, msg: '密码修改成功，请重新登录' });
     }
 
-    // 注销账号
+    // 账号注销
     if (action === 'cancelAccount' && reqMethod === 'POST') {
       if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
       if (!db) return jsonResp({ code: 500, msg: "数据库未绑定" }, 500);
