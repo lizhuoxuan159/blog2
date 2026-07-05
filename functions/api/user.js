@@ -282,7 +282,7 @@ async function sendMailByResend(targetEmail, code, apiKey) {
       "User-Agent": "Cloudflare-Pages-Worker"
     },
     body: JSON.stringify({
-      from: "Notify <notify@blog.lizhuoxuan.dpdns.org>",
+      from: "Notify <notify@resend.dev>",
       to: targetEmail,
       subject: "账号注册安全验证码",
       html: `
