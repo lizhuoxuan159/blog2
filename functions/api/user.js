@@ -263,79 +263,79 @@ async function verifyOauthState(stateStr, secret) {
 }
 
 // 验证码全局缓存、配置
-const codeStorage = new Map();
-const CODE_EXPIRE = 5 * 60 * 1000;
-const RATE_LIMIT = 60 * 1000;
+常量 编码存储 = 新的 地图();
+常量 CODE_EXPIRE = 5 * 60 * 1000;
+常量 RATE_LIMIT = 60 * 1000;
 
 // 生成6位数字验证码
-function generateSixCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+功能 generateSixCode() {
+  返回 线(数学.地板(100000 + 数学.随机的() * 900000));
 }
 
-// Resend发信函数【已替换自定义域名发件人 notify@blog.lizhuoxuan.dpdns.org】
-async function sendMailByResend(targetEmail, code, apiKey) {
-  const resp = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
+//重新发送发信函数，您喜欢notify@blog.Lizhuxuan.dpdns.org
+异步 功能 sendMailByResend(targetEmail, 代码, api密钥) {
+  常量 响应 = 等待 取来("https://api.resend.com/emails", {
+    方法: "POST",
+    标题: {
+      "Authorization": `Bearer ${api密钥}`,
       "Content-Type": "application/json",
       "User-Agent": "Cloudflare-Pages-Worker"
     },
-    body: JSON.stringify({
-      from:" <notify@blog.lizhuoxuan.dpdns.org>",
-      to: targetEmail,
-      subject: "账号注册安全验证码",
-      html: `
-        <div style="padding: 15px;font-family: system-ui;">
-          <h3>注册验证码</h3>
-          <p>本次验证码：<strong style="font-size:20px;color:#1677ff">${code}</strong></p>
+    身体: JSON.字符串化({
+      从:"<notify@blog.lizhuoxuan.dpdns.org>",
+      到: targetEmail,
+      主题: "账号注册安全验证码",
+      超文本标记语言: `
+<div style="padding: 15px;font-family: system-ui;">
+<h3>注册验证码</h3>
+<p>本次验证码：<strong style="字体大小：20px；颜色：#1677ff">${代码}</strong></p>
           <p>验证码5分钟内有效，请勿转发给他人，非本人操作可直接忽略。</p>
         </div>
       `
     })
   });
-  return await resp.json();
+  返回 等待 响应.json();
 }
 
-export async function onRequest({ request, env }) {
-  try {
-    const db = env.DB;
-    let url = new URL(request.url);
+出口 异步 功能 应要求({ 请求, 环境 }) {
+  尝试 {
+    常量 数据库 = 环境.数据库;
+    让 统一资源定位系统 = 新的 统一资源定位系统(请求.统一资源定位系统);
 
     // 微软回调路径兼容：无参路径内部补上action参数，适配Entra规则
-    if(url.pathname === "/api/microsoftCallback"){
-      url.searchParams.set("action", "microsoftCallback");
+    如果(统一资源定位系统.路径名 === "/api/microsoftCallback"){
+      统一资源定位系统.searchParams.设置("action", "microsoftCallback");
     }
 
-    const action = url.searchParams.get('action');
-    const hmacSecret = env.SESSION_HMAC_SECRET;
-    if (!hmacSecret) return jsonResp({ code: 500, msg: "服务端会话密钥未配置" }, 500);
-    const loginUser = await getLoginUser(request, hmacSecret);
-    const siteOrigin = env.SITE_ORIGIN;
-    const reqMethod = request.method;
-    const clientIp = request.headers.get("cf-connecting-ip") || "unknown";
+    常量 行动 = 统一资源定位系统.searchParams.得到('action');
+    常量 hmacSecret = 环境.SESSION_HMAC_SECRET;
+    如果 (!hmacSecret) 返回 jsonResp({ 代码: 500, 味精: "服务端会话密钥未配置" }, 500);
+    常量 登录用户 = 等待 getLoginUser(请求, hmacSecret);
+    常量 地点起源 = 环境.SITE_ORIGIN;
+    常量 reqMethod = 请求.方法;
+    常量 客户端Ip = 请求.标题.得到("cf-connecting-ip") || "unknown";
 
     // 全局OPTIONS跨域预检拦截
-    if(reqMethod === "OPTIONS") return jsonResp(null);
+    如果(reqMethod === "OPTIONS") 返回 jsonResp(等于零的);
 
-    // ========== GitHub 拆分：游客登录、已登录绑定 两个独立入口 ==========
-    // 1. GitHub 游客快捷登录
-    if (action === "githubLogin") {
-      const clientId = env.GITHUB_CLIENT_ID;
-      if (!clientId || !siteOrigin) return jsonResp({ code: 500, msg: "GitHub登录配置缺失" }, 500);
-      const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
-      const githubAuthUrl = new URL("https://github.com/login/oauth/authorize");
-      const state = await generateOauthState(hmacSecret, "login");
-      githubAuthUrl.searchParams.set("client_id", clientId);
-      githubAuthUrl.searchParams.set("redirect_uri", redirectUri);
-      githubAuthUrl.searchParams.set("scope", "read:user");
-      githubAuthUrl.searchParams.set("state", state);
-      return Response.redirect(githubAuthUrl.toString(), 302);
+    //========GitHub拆分：拆分：，you mayotax，you mayoto you you=============================================================================================================================
+    //1。GitHub游客快捷登录
+    如果 (行动 === "githubLogin") {
+      常量 客户端 Id = 环境.GITHUB_CLIENT_ID;
+      如果 (!客户端 Id|| !地点起源) 返回 jsonResp({ 代码: 500, 味精: "GitHub登录配置缺失" }, 500);
+      常量 redirectUri = `${地点起源}/api/user?action=githubCallback`;
+      常量 githubAuthUrl = 新的 统一资源定位系统("https://github.com/login/oauth/authorize");
+      常量 状态 = 等待 generateOauthState(hmacSecret, "login");
+      githubAuthUrl.searchParams.设置("client_id", 客户端 Id);
+      githubAuthUrl.searchParams.设置("redirect_uri", redirectUri);
+      githubAuthUrl.searchParams.设置("scope", "read:user");
+      githubAuthUrl.searchParams.设置("state", 状态);
+      返回 反应.改寄(githubAuthUrl.转换为字符串(), 302);
     }
     // 2. GitHub 账号绑定（必须登录）
-    if (action === "githubBind") {
-      if (!loginUser) return jsonResp({ code: 401, msg: "请登录账号后再执行绑定" }, 401);
-      const clientId = env.GITHUB_CLIENT_ID;
+    如果 (行动 === "githubBind") {
+      如果 (!登录用户) 返回 jsonResp({ 代码: 401, 味精: "请登录账号后再执行绑定" }, 401);
+      常量 客户端 Id = 环境.GITHUB_CLIENT_ID;
       if (!clientId || !siteOrigin) return jsonResp({ code: 500, msg: "GitHub登录配置缺失" }, 500);
       const redirectUri = `${siteOrigin}/api/user?action=githubCallback`;
       const githubAuthUrl = new URL("https://github.com/login/oauth/authorize");
