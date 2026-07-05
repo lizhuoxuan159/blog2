@@ -506,11 +506,11 @@ export async function onRequest({ request, env }) {
 
     // 登录状态检测
     if (action === 'check') {
-      if (!loginUser) return jsonResp({ login: false });
+      if (!loginUser) return jsonResp({ code:0, login: false });
       if (!db) return jsonResp({ code: 500, msg: "数据库未绑定", login: false }, 500);
       const userInfo = await db.prepare(`SELECT role, is_cancel, github_id, microsoft_id FROM users WHERE id = ?`).bind(loginUser.uid ?? null).first();
       if (!userInfo || userInfo.role === "banned" || userInfo.is_cancel === 1) {
-        return new Response(JSON.stringify({ login: false, banned: true }), {
+        return new Response(JSON.stringify({ code:0, login: false, banned: true }), {
           headers: {
             'Content-Type': 'application/json; charset=utf-8',
             'Set-Cookie': buildClearSessionCookie()
@@ -528,7 +528,7 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 发送邮箱验证码
+    // 发送邮箱验证码（修复入库失败）
     if (action === "sendEmailCode") {
       if (reqMethod === "GET") return jsonResp({ code: 0, msg: "接口运行正常，请POST提交请求" });
       if (reqMethod !== "POST") return jsonResp({ code: 405, msg: "非法请求方式" }, 405);
@@ -580,23 +580,28 @@ export async function onRequest({ request, env }) {
 
       if (!db) return jsonResp({ code: 500, msg: "D1数据库未绑定，无法存储验证码记录" }, 500);
       try {
+        const expireTs = String(nowTime + CODE_EXPIRE);
         await db.prepare(`INSERT INTO email_verifications (email, code, expires_at) VALUES (?, ?, ?)`)
-          .bind(realEmail, code, new Date(nowTime + CODE_EXPIRE)).run();
+          .bind(realEmail, code, expireTs).run();
       } catch (dbErr) {
-        return jsonResp({ code: 500, msg: "验证码入库失败，请检查表结构", detail: dbErr.message }, 500);
+        return jsonResp({
+          code: 500,
+          msg: "验证码入库失败",
+          detail: `错误信息：${dbErr.message}\n堆栈：${dbErr.stack}`
+        }, 500);
       }
 
       return jsonResp({ code: 0, msg: "验证码已发送至邮箱，5分钟内有效" });
     }
 
-    // 注册
+    // 注册（适配时间戳校验）
     if (action === 'register' && reqMethod === 'POST') {
       if (!db) return jsonResp({ code: 500, msg: "数据库未绑定" }, 500);
       const { username, password, email, code } = await request.json();
       if (!email || !code) return jsonResp({ code: 1, msg: '邮箱和验证码不能为空' });
       const verifyRecord = await db.prepare(`SELECT code, expires_at FROM email_verifications WHERE email = ? ORDER BY id DESC LIMIT 1`).bind(email).first();
       if (!verifyRecord) return jsonResp({ code: 1, msg: '请先获取验证码' });
-      if (new Date(verifyRecord.expires_at).getTime() < Date.now()) return jsonResp({ code: 1, msg: '验证码已过期，请重新获取' });
+      if (Number(verifyRecord.expires_at) < Date.now()) return jsonResp({ code: 1, msg: '验证码已过期，请重新获取' });
       if (verifyRecord.code !== code) return jsonResp({ code: 1, msg: "验证码错误" });
 
       const hashPwd = await hashPassword(password);
@@ -652,7 +657,7 @@ export async function onRequest({ request, env }) {
       return jsonResp({ code: 0, msg: '角色修改成功' });
     }
 
-    // 用户列表（修复undefined核心接口）
+    // 用户列表（修复前端undefined）
     if (action === 'userList' && reqMethod === 'GET') {
       if (!loginUser) return jsonResp({ code: 99, msg: '未登录，无权访问' }, 403);
       const denyRoles = ['guest', 'banned'];
