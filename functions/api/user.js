@@ -638,9 +638,9 @@ export async function onRequest({ request, env }) {
       });
     }
 
-    // 修改角色
+    // 修改角色（权限修复：仅owner可分配admin）
     if (action === 'setRole' && reqMethod === 'POST') {
-      if (!loginUser) return jsonResp({ code: 99, msg: '无操作权限，仅管理员可用' }, 403);
+      if (!loginUser) return jsonResp({ code: 99, msg: '无操作权限，仅管理员/所有者可用' }, 403);
       if (!db) return jsonResp({ code: 500, msg: "数据库未绑定" }, 500);
       const { targetUid, newRole } = await request.json();
       const allowRoles = ['owner', 'admin', 'writer', 'guest', 'banned'];
@@ -648,9 +648,15 @@ export async function onRequest({ request, env }) {
       const targetUser = await db.prepare(`SELECT id, role FROM users WHERE id = ?`).bind(targetUid ?? null).first();
       if (!targetUser) return jsonResp({ code: 1, msg: '用户不存在' });
 
-      if (loginUser.role === 'admin') {
+      const isLoginOwner = loginUser.role === "owner";
+      // 任何人不能设置owner
+      if (newRole === "owner") {
+        return jsonResp({ code: 98, msg: "无法授予所有者权限" }, 403);
+      }
+      // admin权限限制
+      if (!isLoginOwner) {
         if (targetUser.role === 'owner') return jsonResp({ code: 98, msg: '无权修改所有者账号权限' }, 403);
-        if (newRole === 'owner') return jsonResp({ code: 98, msg: '管理员不能授予所有者权限' }, 403);
+        if (newRole === "admin") return jsonResp({ code: 98, msg: "管理员不能授予管理员权限" }, 403);
       }
 
       await db.prepare(`UPDATE users SET role = ? WHERE id = ?`).bind(newRole, targetUid ?? null).run();
@@ -685,17 +691,75 @@ export async function onRequest({ request, env }) {
       }
     }
 
-    // 删除用户
+    // 删除用户（核心修复：owner可删admin，admin不能删admin/owner，分步捕获错误）
     if (action === 'deleteUser' && reqMethod === 'POST') {
-      if (!loginUser || loginUser.role === 'guest' || loginUser.role === 'banned') return jsonResp({ code: 99, msg: '无权操作' }, 403);
-      if (!db) return jsonResp({ code: 500, msg: "数据库未绑定" }, 500);
-      const { targetUid } = await request.json();
-      if (Number(targetUid) === loginUser.uid) return jsonResp({ code: 1, msg: '不能删除当前登录账号' });
-      const targetUser = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid ?? null).first();
+      if (!loginUser || loginUser.role === 'guest' || loginUser.role === 'banned') {
+        return jsonResp({ code: 99, msg: '无权操作' }, 403);
+      }
+      if (!db) return jsonResp({ code: 500, msg: "D1数据库未绑定" }, 500);
+
+      let body;
+      try {
+        body = await request.json();
+      } catch (e) {
+        return jsonResp({ code: 400, msg: "请求JSON格式错误" }, 400);
+      }
+
+      const rawTargetUid = body.targetUid;
+      const targetUid = Number(rawTargetUid);
+      if (isNaN(targetUid) || targetUid <= 0) {
+        return jsonResp({ code: 1, msg: "无效用户ID" });
+      }
+
+      if (targetUid === loginUser.uid) {
+        return jsonResp({ code: 1, msg: '不能删除当前登录账号' });
+      }
+
+      let targetUser;
+      try {
+        targetUser = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid).first();
+      } catch (sqlErr) {
+        return jsonResp({
+          code: 500,
+          msg: "查询用户失败",
+          detail: sqlErr.message
+        }, 500);
+      }
+
       if (!targetUser) return jsonResp({ code: 1, msg: '用户不存在' });
-      if (loginUser.role === 'admin' && targetUser.role === 'owner') return jsonResp({ code: 98, msg: '无法删除所有者账号' }, 403);
-      await db.prepare(`DELETE FROM posts WHERE author = ?`).bind(targetUid ?? null).run();
-      await db.prepare(`DELETE FROM users WHERE id = ?`).bind(targetUid ?? null).run();
+
+      const isLoginOwner = loginUser.role === 'owner';
+      const targetIsOwner = targetUser.role === 'owner';
+
+      // 所有人禁止删除owner
+      if (targetIsOwner) {
+        return jsonResp({ code: 98, msg: '不允许删除所有者账号' }, 403);
+      }
+      // admin 不能删除其他admin
+      if (!isLoginOwner && targetUser.role === 'admin') {
+        return jsonResp({ code: 98, msg: '管理员无法删除其他管理员' }, 403);
+      }
+
+      try {
+        await db.prepare(`DELETE FROM posts WHERE author = ?`).bind(targetUid).run();
+      } catch (delPostErr) {
+        return jsonResp({
+          code: 500,
+          msg: "删除用户关联文章失败",
+          detail: delPostErr.message
+        }, 500);
+      }
+
+      try {
+        await db.prepare(`DELETE FROM users WHERE id = ?`).bind(targetUid).run();
+      } catch (delUserErr) {
+        return jsonResp({
+          code: 500,
+          msg: "删除用户账号失败",
+          detail: delUserErr.message
+        }, 500);
+      }
+
       return jsonResp({ code: 0, msg: '用户已删除' });
     }
 
