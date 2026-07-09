@@ -334,6 +334,6 @@ export async function onRequest({ request, env }) {
     return jsonResp({ code: 404, msg: "接口不存在" }, 404);
   } catch (globalErr) {
     console.error("Worker异常：", globalErr.message);
-    return jsonResp({ code: 500, msg: "服务器内部错误" }, 500);
+    return jsonResp({ code: 500, msg: "服务器内部错误"+ globalErr.message}, 500);
   }
 }
