@@ -498,6 +498,28 @@ export default {
       `).all();
       return success(results, "用户列表查询成功");
     }
+        // ========== 用户修改自身密码 POST /api/user/change-pwd ==========
+        if (path === "/api/user/change-pwd" && method === "POST") {
+            const adminUid = await getAdminUid(request, HMAC_SALT, db);
+            // 普通登录用户也能进入，getAdminUid仅判断管理员，这里单独取登录uid
+            const sid = getSessionCookie(request);
+            const loginUid = await verifySessionToken(sid, HMAC_SALT);
+            if (!loginUid) return fail("请先登录", 401);
+
+            const { oldPwd, newPwd } = await request.json();
+            if (!oldPwd || !newPwd) return fail("原密码和新密码不能为空");
+
+            // 查询当前账号原始密码
+            const userRow = await db.prepare(`SELECT password FROM users WHERE id = ?`).bind(loginUid).first();
+            const oldHash = secureHashPassword(oldPwd, HMAC_SALT);
+            if (oldHash !== user.password) return fail("原密码错误");
+
+            // 生成新密码哈希并更新
+            const newHash = secureHashPassword(newPwd, HMAC_SALT);
+            await db.prepare(`UPDATE users SET password = ? WHERE id = ?`).bind(newHash, loginUid).run();
+
+            return success(null, "密码修改成功，请重新登录");
+        }
 
     return fail("接口不存在", 404);
   }
