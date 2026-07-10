@@ -1,339 +1,389 @@
-﻿async function sha256(rawStr) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(rawStr);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
+import { createHmac, crypto } from 'crypto';
 
-function base64UrlEncode(buf) {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+// ===================== 全局安全工具（内置防注入、防彩虹表核心） =====================
+/**
+ * 统一响应封装
+ */
+const success = (data = null, msg = "操作成功", extraHeaders = {}) => {
+  return new Response(JSON.stringify({ code: 0, msg, data }), {
+    status: 200,
+    headers: { "Content-Type": "application/json;charset=utf-8", ...extraHeaders }
+  })
 }
-function base64UrlDecode(str) {
-  str = str.replace(/-/g, '+').replace(/_/g, '/');
-  while (str.length % 4) str += '=';
-  return Uint8Array.from(atob(str), c => c.charCodeAt(0));
-}
-
-async function getHmacKey(secretStr) {
-  const enc = new TextEncoder();
-  const keyBuf = enc.encode(secretStr);
-  return crypto.subtle.importKey(
-    'raw',
-    keyBuf,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign', 'verify']
-  );
-}
-
-async function createSignedSessionToken(uid, username, role, secret) {
-  const payload = {
-    uid,
-    username,
-    role,
-    exp: Date.now() + 7 * 24 * 60 * 60 * 1000
-  };
-  const payloadJson = JSON.stringify(payload);
-  const payloadB64 = base64UrlEncode(new TextEncoder().encode(payloadJson));
-  const key = await getHmacKey(secret);
-  const signature = await crypto.subtle.sign('SHA-256', key, new TextEncoder().encode(payloadJson));
-  const signB64 = base64UrlEncode(new Uint8Array(signature));
-  return `${payloadB64}.${signB64}`;
-}
-
-async function verifySessionToken(tokenStr, secret) {
-  const parts = tokenStr.split('.');
-  if (parts.length !== 2) return null;
-  try {
-    const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(parts[0])));
-    if (Date.now() > payload.exp) return null;
-    const key = await getHmacKey(secret);
-    const signatureBuf = base64UrlDecode(parts[1]);
-    const ok = await crypto.subtle.verify('SHA-256', key, signatureBuf, new TextEncoder().encode(JSON.stringify(payload)));
-    return ok ? payload : null;
-  } catch {
-    return null;
-  }
-}
-
-async function hashPassword(rawPwd, salt = null) {
-  const enc = new TextEncoder();
-  if (!salt) salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey('raw', enc.encode(rawPwd), { name: 'PBKDF2' }, false, ['deriveBits']);
-  const derivedBits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 100000, hash: "SHA‑256" }, key, 256);
-  const hashStr = base64UrlEncode(new Uint8Array(derivedBits));
-  return base64UrlEncode(salt) + "$$" + hashStr;
-}
-
-async function verifyPassword(inputPwd, storedPwd) {
-  if (!storedPwd.includes("$$")) {
-    return await sha256(inputPwd) === storedPwd;
-  }
-  const [saltB64, hashB64] = storedPwd.split("$$");
-  const salt = base64UrlDecode(saltB64);
-  const newHash = await hashPassword(inputPwd, salt);
-  return newHash.split("$$")[1] === hashB64;
-}
-
-// Cookie配置，SameSite=None 解决OAuth跨域丢失登录态
-function buildSecureSessionCookie(token, maxAge) {
-  return `__Secure-blog_session=${token}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${maxAge}`;
-}
-function buildClearSessionCookie() {
-  return `__Secure-blog_session=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0`;
-}
-
-function jsonResp(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json;charset=utf-8",
-      "Cache-Control": "no-cache"
-    }
+const fail = (msg = "操作失败", code = 400) => {
+  return new Response(JSON.stringify({ code, msg, data: null }), {
+    status: code,
+    headers: { "Content-Type": "application/json;charset=utf-8" }
   })
 }
 
-function redirect(targetUrl) {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: targetUrl,
-      "Cache-Control": "no-cache, no-store, must-revalidate"
-    }
-  })
+/**
+ * 【防彩虹表核心】HMAC-SHA256加盐哈希
+ * 不是单纯SHA256，使用独立密钥做盐，彩虹表预计算全部失效
+ * raw：原始明文密码
+ * secret：环境变量SESSION_HMAC_SECRET（随机长字符串，不泄露）
+ */
+const secureHashPassword = (raw, secret) => {
+  return createHmac("sha256", secret)
+    .update(raw.trim())
+    .digest("hex");
 }
 
-async function getLoginUser(request, hmacSecret) {
-  const cookieHeader = request.headers.get("Cookie") || "";
-  const match = cookieHeader.match(/__Secure-blog_session=([^;]+)/);
-  if (!match) return null;
-  return await verifySessionToken(match[1], hmacSecret);
+/**
+ * 会话Cookie HMAC签名，防篡改、伪造登录凭证
+ */
+const signSessionToken = (uid, secret) => {
+  const payload = String(uid);
+  const signature = createHmac("sha256", secret).update(payload).digest("hex");
+  return `${payload}.${signature}`;
+}
+const verifySessionToken = (token, secret) => {
+  const [uid, sig] = token.split(".");
+  if (!uid || !sig) return null;
+  const realSig = createHmac("sha256", secret).update(uid).digest("hex");
+  return sig === realSig ? Number(uid) : null;
 }
 
-export async function onRequest({ request, env }) {
-  try {
+/**
+ * Cookie 工具：7天有效期，HttpOnly+Secure+SameSite，前端JS无法读取，防XSS窃取
+ */
+const getSessionCookie = (req) => {
+  const cookieRaw = req.headers.get("cookie") || "";
+  const cookieMap = Object.fromEntries(cookieRaw.split("; ").map(item => item.split("=")));
+  return cookieMap.sid || null;
+}
+const set7DayLoginCookie = (token) => {
+  return {
+    "Set-Cookie": `sid=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=604800`
+  }
+}
+const clearLoginCookie = () => {
+  return {
+    "Set-Cookie": `sid=; Path=/; HttpOnly; Max-Age=0`
+  }
+}
+
+/**
+ * 用户状态校验：注销/封禁拦截
+ */
+const checkUserBlockStatus = (user) => {
+  if (!user) return "账户不存在";
+  if (user.is_cancel === 1) return "该账户已注销，禁止登录";
+  if (user.ban_until) {
+    const now = new Date();
+    const banDeadline = new Date(user.ban_until);
+    if (banDeadline > now) return `账户封禁至 ${user.ban_until}，暂时无法登录`;
+  }
+  return null;
+}
+
+// ===================== 主接口入口 =====================
+export default {
+  async fetch(request, env) {
     const db = env.DB;
     const url = new URL(request.url);
-    const pathname = url.pathname;
-    const action = url.searchParams.get("action");
-    const reqMethod = request.method;
-    const clientIp = request.headers.get("cf-connecting-ip") || "";
-    const hmacSecret = env.SESSION_HMAC_SECRET;
-    const siteOrigin = env.SITE_ORIGIN ?? "https://blog.lizhuoxuan.dpdns.org";
-    const loginUser = await getLoginUser(request, hmacSecret);
+    const path = url.pathname;
+    const method = request.method;
+    const HMAC_SALT = env.SESSION_HMAC_SECRET;
+    const SITE_URL = env.SITE_ORIGIN;
 
-    // 处理预检OPTIONS请求，解决POST 405报错
-    if (reqMethod === "OPTIONS") {
-      return new Response("", {
+    // 1. 邮箱注册 POST /api/user/register
+    if (path === "/api/user/register" && method === "POST") {
+      const { email, username, password, code } = await request.json();
+      // 【防注入】全部参数使用?占位符，无拼接
+      const validCode = await db.prepare(`
+        SELECT id FROM email_verifications 
+        WHERE email = ? AND type = 'register' AND code = ? AND expire_at > CURRENT_TIMESTAMP
+      `).bind(email, code).first();
+      if (!validCode) return fail("验证码错误或已过期");
+
+      // 校验用户名/邮箱唯一性
+      const existUser = await db.prepare(`
+        SELECT id FROM users WHERE username = ? OR email = ?
+      `).bind(username, email).first();
+      if (existUser) return fail("用户名或邮箱已被注册");
+
+      // 加盐哈希密码入库，抵御彩虹表
+      const safePwd = secureHashPassword(password, HMAC_SALT);
+      await db.prepare(`
+        INSERT INTO users (username, password, email) VALUES (?, ?, ?)
+      `).bind(username, safePwd, email).run();
+      // 销毁已使用验证码
+      await db.prepare("DELETE FROM email_verifications WHERE id = ?").bind(validCode.id).run();
+      return success(null, "注册完成，请登录");
+    }
+
+    // 2. 账号密码登录 POST /api/user/login
+    if (path === "/api/user/login" && method === "POST") {
+      const { username, password } = await request.json();
+      const user = await db.prepare(`
+        SELECT * FROM users WHERE username = ?
+      `).bind(username).first();
+      if (!user) return fail("用户名不存在");
+
+      // 拦截封禁/注销账户
+      const blockMsg = checkUserBlockStatus(user);
+      if (blockMsg) return fail(blockMsg, 403);
+
+      // 加盐比对密码，防彩虹表破解
+      const inputHash = secureHashPassword(password, HMAC_SALT);
+      if (inputHash !== user.password) return fail("用户名或密码错误");
+
+      // 生成安全会话Cookie
+      const sessionToken = signSessionToken(user.id, HMAC_SALT);
+      return success(
+        { uid: user.id, username: user.username, role: user.role },
+        "登录成功",
+        set7DayLoginCookie(sessionToken)
+      );
+    }
+
+    // 3. 发送邮箱验证码 POST /api/user/send-code
+    if (path === "/api/user/send-code" && method === "POST") {
+      const { email, type } = await request.json();
+      if (!["register", "resetpwd"].includes(type)) return fail("非法操作类型");
+      // 6位数字验证码
+      const verifyCode = String(Math.floor(100000 + Math.random() * 900000));
+      // 15分钟过期
+      const expireTime = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+      // 清除该邮箱旧验证码
+      await db.prepare(`
+        DELETE FROM email_verifications WHERE email = ? AND type = ?
+      `).bind(email, type).run();
+      // 插入新验证码
+      await db.prepare(`
+        INSERT INTO email_verifications (email, code, type, expire_at) VALUES (?, ?, ?, ?)
+      `).bind(email, verifyCode, type, expireTime).run();
+
+      // Resend发送邮件
+      const mailResp = await fetch("https://api.resend.com/emails", {
+        method: "POST",
         headers: {
-          "Access-Control-Allow-Origin": siteOrigin,
-          "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
+          Authorization: `Bearer ${env.RESEND_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: `${env.MAIL_FROM_NAME} <${env.MAIL_FROM_EMAIL}>`,
+          to: email,
+          subject: type === "register" ? "账户注册验证码" : "重置密码验证码",
+          text: `你的验证码：${verifyCode}，15分钟内有效，请勿泄露给他人`
+        })
+      });
+      if (!mailResp.ok) return fail("邮件发送失败，请稍后重试");
+      return success(null, "验证码已发送至邮箱");
+    }
+
+    // 4. 找回密码重置 POST /api/user/reset-pwd
+    if (path === "/api/user/reset-pwd" && method === "POST") {
+      const { email, code, newPwd } = await request.json();
+      const validCode = await db.prepare(`
+        SELECT id FROM email_verifications 
+        WHERE email = ? AND type = 'resetpwd' AND code = ? AND expire_at > CURRENT_TIMESTAMP
+      `).bind(email, code).first();
+      if (!validCode) return fail("验证码无效或已过期");
+
+      // 新密码加盐哈希
+      const newSafeHash = secureHashPassword(newPwd, HMAC_SALT);
+      await db.prepare(`
+        UPDATE users SET password = ? WHERE email = ?
+      `).bind(newSafeHash, email).run();
+      await db.prepare("DELETE FROM email_verifications WHERE id = ?").bind(validCode.id).run();
+      return success(null, "密码重置成功，请使用新密码登录");
+    }
+
+    // 5. 登出 GET /api/user/logout
+    if (path === "/api/user/logout" && method === "GET") {
+      return success(null, "已安全退出登录", clearLoginCookie());
+    }
+
+    // 6. 永久注销账户 POST /api/user/cancel
+    if (path === "/api/user/cancel" && method === "POST") {
+      const sid = getSessionCookie(request);
+      const loginUid = verifySessionToken(sid, HMAC_SALT);
+      if (!loginUid) return fail("请先登录", 401);
+      // 标记注销，不再允许登录
+      await db.prepare("UPDATE users SET is_cancel = 1 WHERE id = ?").bind(loginUid).run();
+      return success(null, "账户已注销", clearLoginCookie());
+    }
+
+    // ========== GitHub OAuth 第三方登录 ==========
+    // 跳转授权页 GET /api/user/github
+    if (path === "/api/user/github" && method === "GET") {
+      const authUrl = new URL("https://github.com/login/oauth/authorize");
+      authUrl.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
+      authUrl.searchParams.set("redirect_uri", `${SITE_URL}/api/user/github/callback`);
+      authUrl.searchParams.set("scope", "user:email");
+      return new Response("", {
+        status: 302,
+        headers: { Location: authUrl.toString() }
+      })
+    }
+    // GitHub授权回调 GET /api/user/github/callback
+    if (path === "/api/user/github/callback" && method === "GET") {
+      const code = url.searchParams.get("code");
+      if (!code) return fail("第三方授权中断");
+      // 交换access_token
+      const tokenResp = await fetch("https://github.com/login/oauth/access_token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Blog-Safe-Auth/1.0"
+        },
+        body: new URLSearchParams({
+          client_id: env.GITHUB_CLIENT_ID,
+          client_secret: env.GITHUB_CLIENT_SECRET,
+          redirect_uri: `${SITE_URL}/api/user/github/callback`,
+          code
+        })
+      });
+      const tokenText = await tokenResp.text();
+      const tokenData = Object.fromEntries(tokenText.split("&").map(i => i.split("=")));
+      const accessToken = tokenData.access_token;
+      if (!accessToken) return fail("获取登录凭证失败");
+
+      // 获取GitHub用户信息
+      const ghUserResp = await fetch("https://api.github.com/user", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "User-Agent": "Blog-Safe-Auth/1.0"
+        }
+      });
+      const ghUser = await ghUserResp.json();
+      const githubId = String(ghUser.id);
+      const ghEmail = ghUser.email || null;
+
+      // 查询绑定用户
+      let loginUser = await db.prepare(`
+        SELECT * FROM users WHERE github_id = ?
+      `).bind(githubId).first();
+      // 无绑定则自动创建账号
+      if (!loginUser) {
+        await db.prepare(`
+          INSERT INTO users (username, github_id, email) VALUES (?, ?, ?)
+        `).bind(ghUser.login, githubId, ghEmail).run();
+        loginUser = await db.prepare("SELECT * FROM users WHERE github_id = ?").bind(githubId).first();
+      }
+
+      // 校验封禁注销
+      const blockMsg = checkUserBlockStatus(loginUser);
+      if (blockMsg) return fail(blockMsg, 403);
+
+      // 下发7天登录Cookie，跳转首页
+      const sessionToken = signSessionToken(loginUser.id, HMAC_SALT);
+      return new Response("", {
+        status: 302,
+        headers: {
+          Location: SITE_URL,
+          ...set7DayLoginCookie(sessionToken)
         }
       })
     }
 
-    // ============ 密码登录接口 /api/user?action=login 只允许POST ============
-    if (pathname === "/api/user" && action === "login" && reqMethod === "POST") {
-      const limitKey = "loginPassword";
-      const maxErr = 5;
-      const lockTime = 15 * 60 * 1000;
-      const now = Date.now();
-      const cleanThr = now - lockTime;
-      // 清理超时的错误计数
-      await db.prepare(`DELETE FROM ip_rate_limit WHERE ip = ? AND action = ? AND last_time < ?`)
-        .bind(clientIp, limitKey, cleanThr).run();
-
-      const rateRow = await db.prepare(`SELECT count FROM ip_rate_limit WHERE ip = ? AND action = ?`)
-        .bind(clientIp, limitKey).first();
-      if (rateRow && rateRow.count >= maxErr) {
-        return jsonResp({ code: 429, msg: "密码错误次数过多，请15分钟后重试" }, 429);
-      }
-      // 解析前端提交表单
-      const body = await request.json();
-      const { username, password } = body;
-      const userRow = await db.prepare(`
-        SELECT id, username, password, role, ban_until FROM users WHERE username = ?
-      `).bind(username).first();
-
-      if (!userRow) {
-        await db.prepare(`
-          INSERT OR REPLACE INTO ip_rate_limit(ip, action, count, last_time, expire)
-          VALUES (?, ?, ?, ?, ?)
-        `).bind(clientIp, limitKey, rateRow ? rateRow.count + 1 : 1, now, now + lockTime).run();
-        return jsonResp({ code: 1, msg: "账号或密码错误" });
-      }
-      // 判断账号封禁
-      if (userRow.ban_until && now < userRow.ban_until) {
-        return jsonResp({ code: 2, msg: "账号被临时封禁" });
-      }
-      // 校验密码
-      const passOk = await verifyPassword(password, userRow.password);
-      if (!passOk) {
-        await db.prepare(`
-          INSERT OR REPLACE INTO ip_rate_limit(ip, action, count, last_time, expire)
-          VALUES (?, ?, ?, ?, ?)
-        `).bind(clientIp, limitKey, rateRow ? rateRow.count + 1 : 1, now, now + lockTime).run();
-        return jsonResp({ code: 1, msg: "账号或密码错误" });
-      }
-      // 登录成功，清除错误计数，生成会话Cookie
-      await db.prepare(`DELETE FROM ip_rate_limit WHERE ip = ? AND action = ?`)
-        .bind(clientIp, limitKey).run();
-      const sessionToken = await createSignedSessionToken(userRow.id, userRow.username, userRow.role, hmacSecret);
-      const response = jsonResp({ code: 0, msg: "登录成功" });
-      response.headers.set("Set-Cookie", buildSecureSessionCookie(sessionToken, 7 * 24 * 3600));
-      return response;
+    // ========== Microsoft Entra 微软登录 ==========
+    // 跳转授权 GET /api/user/microsoft
+    if (path === "/api/user/microsoft" && method === "GET") {
+      const authUrl = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
+      authUrl.searchParams.set("client_id", env.MS_CLIENT_ID);
+      authUrl.searchParams.set("response_type", "code");
+      authUrl.searchParams.set("redirect_uri", `${SITE_URL}/api/user/microsoft/callback`);
+      authUrl.searchParams.set("scope", "openid email profile");
+      authUrl.searchParams.set("response_mode", "query");
+      return new Response("", {
+        status: 302,
+        headers: { Location: authUrl.toString() }
+      })
     }
-
-    // ============ 微软独立无参回调路由，解决Azure禁止query参数 ============
-    if (pathname === "/api/microsoftCallback") {
-      const msCid = env.MS_CLIENT_ID;
-      const msSec = env.MS_CLIENT_SECRET;
+    // 微软授权回调 GET /api/user/microsoft/callback
+    if (path === "/api/user/microsoft/callback" && method === "GET") {
       const code = url.searchParams.get("code");
-      const stateRaw = url.searchParams.get("state");
-      const redirectUri = `${siteOrigin}/api/microsoftCallback`;
-      if (!msCid || !msSec || !code || !stateRaw) return jsonResp({ code: 400, msg: "参数缺失" }, 400);
-
-      async function generateOauthState(secret, flowType) {
-        const nonceBuf = crypto.getRandomValues(new Uint8Array(16));
-        const payload = {
-          nonce: base64UrlEncode(nonceBuf),
-          ts: Date.now(),
-          type: flowType,
-          exp: Date.now() + 10 * 60 * 1000
-        };
-        const payloadJson = JSON.stringify(payload);
-        const key = await getHmacKey(secret);
-        const sign = await crypto.subtle.sign("SHA-256", key, new TextEncoder().encode(payloadJson));
-        return base64UrlEncode(new TextEncoder().encode(payloadJson)) + "." + base64UrlEncode(new Uint8Array(sign));
-      }
-      async function verifyOauthState(stateStr, secret) {
-        const parts = stateStr.split(".");
-        if (parts.length !== 2) return null;
-        try {
-          const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(parts[0])));
-          if (Date.now() > payload.exp) return null;
-          const key = await getHmacKey(secret);
-          const signBuf = base64UrlDecode(parts[1]);
-          const valid = await crypto.subtle.verify("SHA-256", key, signBuf, new TextEncoder().encode(JSON.stringify(payload)));
-          return valid ? payload : null;
-        } catch {
-          return null;
-        }
-      }
-
-      const statePay = await verifyOauthState(stateRaw, hmacSecret);
-      if (!statePay) return jsonResp({ code: 403, msg: "CSRF校验失败" }, 403);
-      // 获取微软token
-      const tokenRes = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+      if (!code) return fail("微软授权失败");
+      // 交换token
+      const tokenResp = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
-          client_id: msCid,
-          client_secret: msSec,
+          client_id: env.MS_CLIENT_ID,
+          client_secret: env.MS_CLIENT_SECRET,
+          redirect_uri: `${SITE_URL}/api/user/microsoft/callback`,
           grant_type: "authorization_code",
-          code,
-          redirect_uri: redirectUri
+          code
         })
-      })
-      const tokenData = await tokenRes.json();
-      if (!tokenData.access_token) return jsonResp({ code: 500, msg: "获取令牌失败" }, 500);
-      const msUserRes = await fetch("https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail", {
-        headers: { Authorization: `Bearer ${tokenData.access_token}` }
-      })
-      const msUser = await msUserRes.json();
-      const msUid = String(msUser.id);
-      const bindUser = await db.prepare(`SELECT id FROM users WHERE microsoft_id = ?`).bind(msUid).first();
+      });
+      const tokenData = await tokenResp.json();
+      const accessToken = tokenData.access_token;
+      if (!accessToken) return fail("获取微软登录凭证失败");
 
-      if (statePay.type === "bind") {
-        if (!loginUser) return redirect(`${siteOrigin}/login.html`);
-        if (bindUser) return jsonResp({ code: 500, msg: "该微软账号已绑定其他账号" }, 500);
-        const updateRes = await db.prepare(`UPDATE users SET microsoft_id = ? WHERE id = ?`)
-          .bind(msUid, loginUser.uid).run();
-        if (updateRes.changes > 0) {
-          return redirect(`${siteOrigin}/account.html`);
-        } else {
-          return redirect(`${siteOrigin}/`);
+      // 获取微软用户信息
+      const msUserResp = await fetch("https://graph.microsoft.com/v1.0/me", {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const msUser = await msUserResp.json();
+      const microsoftId = msUser.id;
+      const msEmail = msUser.mail || msUser.userPrincipalName;
+      const displayName = msUser.displayName || `ms_${microsoftId.slice(0, 8)}`;
+
+      // 查询绑定账号
+      let loginUser = await db.prepare(`
+        SELECT * FROM users WHERE microsoft_id = ?
+      `).bind(microsoftId).first();
+      if (!loginUser) {
+        await db.prepare(`
+          INSERT INTO users (username, microsoft_id, email) VALUES (?, ?, ?)
+        `).bind(displayName, microsoftId, msEmail).run();
+        loginUser = await db.prepare("SELECT * FROM users WHERE microsoft_id = ?").bind(microsoftId).first();
+      }
+
+      const blockMsg = checkUserBlockStatus(loginUser);
+      if (blockMsg) return fail(blockMsg, 403);
+
+      const sessionToken = signSessionToken(loginUser.id, HMAC_SALT);
+      return new Response("", {
+        status: 302,
+        headers: {
+          Location: SITE_URL,
+          ...set7DayLoginCookie(sessionToken)
         }
-      }
-      if (statePay.type === "login") {
-        if (bindUser) {
-          const token = await createSignedSessionToken(bindUser.id, bindUser.username, bindUser.role, hmacSecret);
-          const resp = redirect(`${siteOrigin}/`);
-          resp.headers.set("Set-Cookie", buildSecureSessionCookie(token, 7 * 86400));
-          return resp;
-        } else {
-          return redirect(`${siteOrigin}/register.html`);
-        }
-      }
+      })
     }
 
-    // ============ 微软登录跳转 /api/user?action=microsoftLogin ============
-    if (pathname === "/api/user" && action === "microsoftLogin") {
-      async function generateOauthState(secret, flowType) {
-        const nonceBuf = crypto.getRandomValues(new Uint8Array(16));
-        const payload = {
-          nonce: base64UrlEncode(nonceBuf),
-          ts: Date.now(),
-          type: flowType,
-          exp: Date.now() + 10 * 60 * 1000
-        };
-        const payloadJson = JSON.stringify(payload);
-        const key = await getHmacKey(secret);
-        const sign = await crypto.subtle.sign("SHA-256", key, new TextEncoder().encode(payloadJson));
-        return base64UrlEncode(new TextEncoder().encode(payloadJson)) + "." + base64UrlEncode(new Uint8Array(sign));
+    // ========== 管理员接口：封禁用户 POST /api/user/admin/ban (需登录管理员) ==========
+    if (path === "/api/user/admin/ban" && method === "POST") {
+      // 校验管理员登录权限
+      const sid = getSessionCookie(request);
+      const adminUid = verifySessionToken(sid, HMAC_SALT);
+      if (!adminUid) return fail("未登录管理员账号", 401);
+      const adminUser = await db.prepare("SELECT role FROM users WHERE id = ?").bind(adminUid).first();
+      if (!adminUser || (adminUser.role !== "admin" && adminUser.role !== "owner")) {
+        return fail("无管理员操作权限", 403);
       }
-      const msCid = env.MS_CLIENT_ID;
-      const redirectUri = `${siteOrigin}/api/microsoftCallback`;
-      if (!msCid) return jsonResp({ code: 500, msg: "未配置MS_CLIENT_ID" }, 500);
-      const state = await generateOauthState(hmacSecret, "login");
-      const authUrl = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
-      authUrl.searchParams.set("client_id", msCid);
-      authUrl.searchParams.set("response_type", "code");
-      authUrl.searchParams.set("redirect_uri", redirectUri);
-      authUrl.searchParams.set("scope", "openid profile email");
-      authUrl.searchParams.set("state", state);
-      authUrl.searchParams.set("response_mode", "query");
-      return redirect(authUrl.toString());
+
+      const { targetUid, banDays } = await request.json();
+      // 计算封禁到期时间
+      const banTime = new Date(Date.now() + banDays * 24 * 60 * 60 * 1000).toISOString();
+      await db.prepare(`
+        UPDATE users SET ban_until = ? WHERE id = ?
+      `).bind(banTime, targetUid).run();
+      return success(null, `已封禁用户${banDays}天`);
     }
 
-    // ============ 微软绑定跳转 /api/user?action=microsoftBind ============
-    if (pathname === "/api/user" && action === "microsoftBind") {
-      if (!loginUser) return jsonResp({ code: 401, msg: "请先登录" }, 401);
-      async function generateOauthState(secret, flowType) {
-        const nonceBuf = crypto.getRandomValues(new Uint8Array(16));
-        const payload = {
-          nonce: base64UrlEncode(nonceBuf),
-          ts: Date.now(),
-          type: flowType,
-          exp: Date.now() + 10 * 60 * 1000
-        };
-        const payloadJson = JSON.stringify(payload);
-        const key = await getHmacKey(secret);
-        const sign = await crypto.subtle.sign("SHA-256", key, new TextEncoder().encode(payloadJson));
-        return base64UrlEncode(new TextEncoder().encode(payloadJson)) + "." + base64UrlEncode(new Uint8Array(sign));
+    // ========== 管理员接口：查询全部用户 GET /api/user/admin/list ==========
+    if (path === "/api/user/admin/list" && method === "GET") {
+      const sid = getSessionCookie(request);
+      const adminUid = verifySessionToken(sid, HMAC_SALT);
+      if (!adminUid) return fail("未登录管理员账号", 401);
+      const adminUser = await db.prepare("SELECT role FROM users WHERE id = ?").bind(adminUid).first();
+      if (!adminUser || (adminUser.role !== "admin" && adminUser.role !== "owner")) {
+        return fail("无管理员操作权限", 403);
       }
-      const msCid = env.MS_CLIENT_ID;
-      const redirectUri = `${siteOrigin}/api/microsoftCallback`;
-      const state = await generateOauthState(hmacSecret, "bind");
-      const authUrl = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
-      authUrl.searchParams.set("client_id", msCid);
-      authUrl.searchParams.set("response_type", "code");
-      authUrl.searchParams.set("redirect_uri", redirectUri);
-      authUrl.searchParams.set("scope", "openid profile email");
-      authUrl.searchParams.set("state", state);
-      authUrl.searchParams.set("response_mode", "query");
-      return redirect(authUrl.toString());
+      // 不返回密码哈希，保护数据
+      const { results } = await db.prepare(`
+        SELECT id, username, email, github_id, microsoft_id, role, created_at, is_cancel, ban_until 
+        FROM users ORDER BY id DESC
+      `).all();
+      return success(results, "用户列表查询成功");
     }
 
-    // 兜底404
-    return jsonResp({ code: 404, msg: "接口不存在" }, 404);
-  } catch (globalErr) {
-    console.error("Worker异常：", globalErr.message);
-    return jsonResp({ code: 500, msg: "服务器内部错误"+ globalErr.message}, 500);
+    return fail("接口不存在", 404);
   }
 }
