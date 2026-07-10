@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -18,21 +18,22 @@
     <input type="password" id="password" placeholder="密码">
     <button class="glass-btn" style="width:100%" onclick="doLogin()" id="loginBtn">登录</button>
 
-    <!-- GitHub登录按钮 -->
-    <a href="/api/user?action=githubLogin">
+    <!-- GitHub登录按钮（修正路由） -->
+    <a href="/api/user/github">
       <button class="glass-btn" style="width:100%;margin-top:12px;background:rgba(30,30,30,0.2)">使用 GitHub 快捷登录/注册</button>
     </a>
-    <button class="glass-btn" style="width:100%;margin-top:8px;background:rgba(0,120,212,0.2)" onclick="location.href='/api/user?action=microsoftLogin'">
+    <!-- 微软登录按钮（修正路由） -->
+    <button class="glass-btn" style="width:100%;margin-top:8px;background:rgba(0,120,212,0.2)" onclick="location.href='/api/user/microsoft'">
       使用 Microsoft 账号登录/注册
     </button>
     <p style="margin-top:12px;text-align:center">没有账号？<a href="/register.html">去注册</a></p>
-    <!-- 忘记密码弹窗触发，不直接跳转接口 -->
-    <p style="margin-top:8px;text-align:center"><a href="javascript:void(0)" onclick="openForgetPwd()">忘记密码？点击获取重置链接</a></p>
+    <!-- 忘记密码弹窗触发 -->
+    <p style="margin-top:8px;text-align:center"><a href="javascript:void(0)" onclick="openForgetPwd()">忘记密码？点击获取重置验证码</a></p>
   </div>
 </div>
 
 <script>
-// 登录
+// 账号密码登录（接口地址修正 /api/user/login）
 async function doLogin() {
   console.log('登录按钮被点击');
   const username = document.getElementById('username').value.trim();
@@ -47,7 +48,8 @@ async function doLogin() {
   loginBtn.innerText = '登录中...';
 
   try {
-    const res = await fetch('/api/user?action=login', {
+    // 修正接口路径
+    const res = await fetch('/api/user/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=utf-8'
@@ -76,21 +78,29 @@ async function doLogin() {
     loginBtn.innerText = '登录';
   }
 }
-// 打开忘记密码弹窗
+
+// 忘记密码：发送重置验证码 接口 /api/user/send-code type=resetpwd
 async function openForgetPwd() {
-  const email = prompt('请输入你的注册邮箱，系统将发送密码重置链接：');
+  const email = prompt('请输入你的注册邮箱，系统将发送密码重置验证码：');
   if (!email || email.trim() === '') return;
   const targetEmail = email.trim();
   try {
-    const res = await fetch('/api/user?action=forgetPassword', {
+    const res = await fetch('/api/user/send-code', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=utf-8'
       },
-      body: JSON.stringify({ email: targetEmail })
+      body: JSON.stringify({ 
+        email: targetEmail,
+        type: "resetpwd"
+      })
     });
     const data = await res.json();
     alert(data.msg);
+    // 发送成功后跳转重置页面（自行新建reset.html）
+    if(data.code === 0){
+      location.href = "/reset.html?email="+encodeURIComponent(targetEmail);
+    }
   } catch (err) {
     alert('请求失败，请稍后重试');
     console.error(err);
