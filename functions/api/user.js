@@ -4,6 +4,76 @@ import { createHmac, crypto } from 'crypto';
 /**
  * 统一响应封装
  */
+/**
+ * 校验当前登录者是否为管理员(admin / owner)
+ * @param {Request} request
+ * @param {string} secret
+ * @param {D1Database} db
+ * @returns {number|null} 管理员uid，非管理员返回null
+ */
+async function getAdminUid(request, secret, db) {
+    const sid = getSessionCookie(request);
+    const loginUid = verifySessionToken(sid, secret);
+    if (!loginUid) return null;
+    const user = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(loginUid).first();
+    if (!user) return null;
+    if (user.role === "admin" || user.role === "owner") {
+        return loginUid;
+    }
+    return null;
+}
+
+/**
+ * 管理员新建用户
+ */
+async function adminCreateUser(db, username, password, role, secret) {
+    const exist = await db.prepare(`SELECT id FROM users WHERE username = ?`).bind(username).first();
+    if (exist) return { ok: false, msg: "该用户名已存在" };
+    const safePwd = secureHashPassword(password, secret);
+    await db.prepare(`INSERT INTO users (username, password, role) VALUES (?, ?, ?)`).bind(username, safePwd, role).run();
+    return { ok: true, msg: "创建用户成功" };
+}
+
+/**
+ * 修改用户角色
+ */
+async function setUserRole(db, operatorUid, targetUid, newRole) {
+    // 获取操作者和目标用户信息
+    const opUser = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(operatorUid).first();
+    const targetUser = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid).first();
+    if (!targetUser) return { ok: false, msg: "用户不存在" };
+    // admin 不能修改 owner 和其他 admin
+    if (opUser.role === "admin") {
+        if (targetUser.role === "owner" || targetUser.role === "admin") {
+            return { ok: false, msg: "管理员无权修改 owner / 其他管理员" };
+        }
+        if (newRole === "owner" || newRole === "admin") {
+            return { ok: false, msg: "管理员不能设置 owner / admin 角色" };
+        }
+    }
+    await db.prepare(`UPDATE users SET role = ? WHERE id = ?`).bind(newRole, targetUid).run();
+    return { ok: true, msg: "角色修改成功" };
+}
+
+/**
+ * 删除用户（仅owner可删除admin，admin不能删admin和owner）
+ */
+async function deleteOneUser(db, operatorUid, targetUid) {
+    const opUser = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(operatorUid).first();
+    const targetUser = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid).first();
+    if (!targetUser) return { ok: false, msg: "用户不存在" };
+    if (opUser.role === "admin") {
+        if (targetUser.role === "admin" || targetUser.role === "owner") {
+            return { ok: false, msg: "管理员不能删除管理员和站主" };
+        }
+    }
+    // 只删除用户记录，文章保留，前端展示账户已注销
+    await db.prepare(`UPDATE posts SET author_id = NULL WHERE author_id = ?`).bind(targetUid).run();
+    await db.prepare(`UPDATE comments SET user_id = NULL WHERE user_id = ?`).bind(targetUid).run();
+    await db.prepare(`DELETE FROM users WHERE id = ?`).bind(targetUid).run();
+    return { ok: true, msg: "删除成功" };
+}
+
 const success = (data = null, msg = "操作成功", extraHeaders = {}) => {
   return new Response(JSON.stringify({ code: 0, msg, data }), {
     status: 200,
@@ -366,6 +436,51 @@ export default {
       `).bind(banTime, targetUid).run();
       return success(null, `已封禁用户${banDays}天`);
     }
+        // ========== 1.管理员新建用户 POST /api/user/admin/addUser ==========
+        if (path === "/api/user/admin/addUser" && method === "POST") {
+            const adminUid = await getAdminUid(request, HMAC_SALT, db);
+            if (!adminUid) return fail("无管理员权限", 403);
+            const { username, password, role } = await request.json();
+            const res = await adminCreateUser(db, username, password, role, HMAC_SALT);
+            if (!res.ok) return fail(res.msg);
+            return success(null, res.msg);
+        }
+
+        // ========== 2.修改用户角色 POST /api/user/admin/setRole ==========
+        if (path === "/api/user/admin/setRole" && method === "POST") {
+            const adminUid = await getAdminUid(request, HMAC_SALT, db);
+            if (!adminUid) return fail("无管理员权限", 403);
+            const { targetUid, newRole } = await request.json();
+            const res = await setUserRole(db, adminUid, targetUid, newRole);
+            if (!res.ok) return fail(res.msg);
+            return success(null, res.msg);
+        }
+
+        // ========== 3.删除用户 POST /api/user/admin/deleteUser ==========
+        if (path === "/api/user/admin/deleteUser" && method === "POST") {
+            const adminUid = await getAdminUid(request, HMAC_SALT, db);
+            if (!adminUid) return fail("无管理员权限", 403);
+            const { targetUid } = await request.json();
+            const res = await deleteOneUser(db, adminUid, targetUid);
+            if (!res.ok) return fail(res.msg);
+            return success(null, res.msg);
+        }
+
+        // ========== 4.简易获取当前登录用户信息（替代原来的 /api/user?action=check）GET /api/user/check ==========
+        if (path === "/api/user/check" && method === "GET") {
+            const sid = getSessionCookie(request);
+            const loginUid = verifySessionToken(sid, HMAC_SALT);
+            if (!loginUid) {
+                return success({ login: false });
+            }
+            const user = await db.prepare(`SELECT id, username, role FROM users WHERE id = ?`).bind(loginUid).first();
+            return success({
+                login: true,
+                uid: user.id,
+                username: user.username,
+                role: user.role
+            });
+        }
 
     // ========== 管理员接口：查询全部用户 GET /api/user/admin/list ==========
     if (path === "/api/user/admin/list" && method === "GET") {
