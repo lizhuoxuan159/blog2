@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -13,10 +13,9 @@
     <a href="/index.html"><button class="glass-btn">返回首页</button></a>
   </nav>
   <div class="glass" style="margin-bottom:20px">
-    <h3>手动创建新用户</h3>
+    <h3>手动创建新用户（后端暂未实现该接口）</h3>
     <input type="text" id="newUser" placeholder="用户名">
     <input type="password" id="newPwd" placeholder="初始密码">
-    <!-- 管理员创建用户 移除owner选项 -->
     <select id="newRole">
       <option value="guest">访客 guest</option>
       <option value="writer">作家 writer</option>
@@ -30,123 +29,82 @@
   </div>
 </div>
 <script>
-(async function checkAuthRedirect() {
-  const res = await fetch('/api/user?action=check');
-  const data = await res.json();
-  if (!data.login) {
-    const currentUrl = location.href;
-    location.href = `/login.html?redirect=${encodeURIComponent(currentUrl)}`;
-    return;
-  }
-})();
-async function checkAuth(){
-  const res = await fetch('/api/user?action=check');
-  const data = await res.json();
-  if(!data.login || data.role === 'guest' || data.role === 'banned'){
-    location.href = `/error.html?code=403&msg=对不起，你没有权限`;
-    return;
-  }
-  loadUserList();
-}
+/**
+ * 注意：当前后端仅实现2个管理员接口：
+ * 1. GET /api/user/admin/list 获取全部用户列表
+ * 2. POST /api/user/admin/ban 封禁用户
+ * 后端缺失：检查登录、新建用户、修改角色、删除用户接口，后续后端补充接口之后再启用对应函数
+*/
 
-async function adminCreateUser(){
-  const username = document.getElementById('newUser').value.trim();
-  const pwd = document.getElementById('newPwd').value.trim();
-  const role = document.getElementById('newRole').value;
-  if(!username||!pwd) return alert('用户名密码不能为空');
-  const res = await fetch('/api/user?action=adminAddUser',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({username,password:pwd,role})
-  })
-  const ret = await res.json();
-  alert(ret.msg);
-  loadUserList();
-}
-
+// 加载用户列表
 async function loadUserList(){
-  const res = await fetch('/api/user?action=userList');
-  const data = await res.json();
-  if(data.code !== 0) return alert(data.msg);
-  const loginRes = await fetch('/api/user?action=check');
-  const loginInfo = await loginRes.json();
-  const myRole = loginInfo.role;
-  const myUid = loginInfo.uid;
-
-  const wrap = document.getElementById('userListWrap');
-  wrap.innerHTML = data.list.map(u=>{
-    let optionHtml = '';
-    // owner 只能所有者自己修改，admin看不到owner选项
-    if(myRole === 'owner'){
-      optionHtml = `
-      <option value="owner">站主 owner</option>
-        <option value="admin">管理员 admin</option>
-        <option value="writer">作家 writer</option>
-        <option value="guest">访客 guest</option>
-        <option value="banned">封禁 banned</option>
+  try {
+    const res = await fetch('/api/user/admin/list');
+    const data = await res.json();
+    if(data.code !== 0){
+      alert(data.msg);
+      // 无权限跳转403页面
+      location.href = `/error.html?code=403&msg=对不起，你没有权限`;
+      return;
+    }
+    const userList = data.data;
+    const wrap = document.getElementById('userListWrap');
+    wrap.innerHTML = '';
+    userList.forEach(u=>{
+      let optionHtml = '';
+      // 后续你后端补充修改角色接口之后启用
+      optionHtml = `<option value="${u.role}">${u.role}</option>`;
+      let banText = u.ban_until ? `封禁至:${u.ban_until}` : "正常";
+      let cancelText = u.is_cancel ===1 ? "【账户已注销】" : "";
+      wrap.innerHTML += `
+        <div style="margin:10px 0;padding:10px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;display:flex;align-items:center;gap:15px;flex-wrap:wrap">
+          <span>ID:${u.id} | 用户名:${escapeHtml(u.username)} | 角色:${u.role} | ${banText} ${cancelText}</span>
+          <button class="glass-btn" onclick="banUser(${u.id})" style="background:rgba(10,120,200,0.2)">设置封禁天数</button>
+        </div>
       `;
-    }else{
-      // admin 无owner选项，且不能修改其他admin
-      if(u.role === 'owner' || u.role === 'admin'){
-        optionHtml = `<option value="${u.role}">${u.role}（不可修改）</option>`;
-      }else{
-        optionHtml = `
-          <option value="guest">访客 guest</option>
-          <option value="writer">作家 writer</option>
-          <option value="banned">封禁 banned</option>
-        `;
-      }
-    }
-    let delBtnShow = true;
-    // admin不能删owner、其他admin
-    if(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')){
-      delBtnShow = false;
-    }
-    return `
-  <div style="margin:10px 0;padding:10px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;display:flex;align-items:center;gap:15px;flex-wrap:wrap">
-    <span>ID:${u.id} | 用户名:${escapeHtml(u.username)} | 角色:${u.role} | ${u.is_cancel==1?'【已注销】':'正常账号'}</span>
-    <select id="role_${u.id}" ${(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')) ? 'disabled' : ''}>
-      ${optionHtml}
-    </select>
-    <button class="glass-btn" onclick="saveRole(${u.id})" ${(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')) ? 'disabled' : ''}>保存修改</button>
-    ${delBtnShow ? `<button class="glass-btn" style="background:rgba(255,80,80,0.25)" onclick="delUser(${u.id},'${escapeHtml(u.username)}')">删除用户</button>` : '<span style="color:#aaa">不可删除</span>'}
-  </div>
-  `
-  }).join('');
-  data.list.forEach(u=>{
-    const sel = document.getElementById(`role_${u.id}`);
-    if(sel) sel.value = u.role;
-  })
+    })
+  } catch(err){
+    console.error(err);
+    alert("获取用户列表失败");
+  }
 }
 
+// 封禁用户（对接后端现有的 /api/user/admin/ban）
+async function banUser(targetUid){
+  const days = prompt("请输入封禁天数（数字）：");
+  if(!days || isNaN(Number(days)) || Number(days) <= 0) return alert("天数填写错误");
+  const res = await fetch('/api/user/admin/ban',{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({targetUid:targetUid, banDays:Number(days)})
+  })
+  const ret = await res.json();
+  alert(ret.msg);
+  loadUserList();
+}
+
+// 新建用户（后端暂未实现该接口，仅预留前端逻辑）
+async function adminCreateUser(){
+  alert("后端暂未开发创建用户接口，请先在user.js补充对应接口");
+}
+// 保存角色（后端暂未实现）
 async function saveRole(uid){
-  const newRole = document.getElementById(`role_${uid}`).value;
-  const res = await fetch('/api/user?action=setRole',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({targetUid:uid,newRole})
-  })
-  const ret = await res.json();
-  alert(ret.msg);
-  loadUserList();
+  alert("后端暂未开发修改角色接口");
 }
-
+// 删除用户（后端暂未实现）
 async function delUser(uid, uname){
-  if(!confirm(`确定删除用户【${uname}】？该用户所有文章保留，作者显示账户已注销，不可恢复！`)) return;
-  const res = await fetch('/api/user?action=deleteUser',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({targetUid:uid})
-  });
-  const ret = await res.json();
-  alert(ret.msg);
-  loadUserList();
+  alert("后端暂未开发删除用户接口");
 }
 
 function escapeHtml(str){
+  if(!str) return "";
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-checkAuth();
+
+// 页面入口
+(async function initPage(){
+  await loadUserList();
+})();
 </script>
 </body>
 </html>
