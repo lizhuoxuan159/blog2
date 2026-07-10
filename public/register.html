@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -22,7 +22,8 @@
     </div>
     <input type="password" id="password" placeholder="密码">
     <button class="glass-btn" style="width:100%" onclick="reg()">注册</button>
-    <a href="/api/user?action=githubAuth">
+    <!-- 修正GitHub跳转路由 -->
+    <a href="/api/user/github">
       <button class="glass-btn" style="width:100%;margin-top:12px;background:rgba(30,30,30,0.2)">使用 GitHub 快捷登录/注册</button>
     </a>
     <p style="margin-top:12px;text-align:center">已有账号？<a href="/login.html">去登录</a></p>
@@ -36,20 +37,24 @@ async function sendEmailCode(){
   const email = document.getElementById('email').value.trim();
   if(!email) return alert('请先输入邮箱');
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return alert('邮箱格式不正确');
-  
+  
   if(countdown > 0) return;
-  
+  
   const btn = document.getElementById('sendCodeBtn');
   btn.disabled = true;
   btn.textContent = '发送中...';
-  
-  const res = await fetch('/api/user?action=sendEmailCode',{
+  
+  // 接口修正：/api/user/send-code 带上 type=register
+  const res = await fetch('/api/user/send-code',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({email})
+    body:JSON.stringify({
+      email: email,
+      type: "register"
+    })
   });
   const data = await res.json();
-  
+  
   if(data.code === 0){
     alert('验证码已发送，请注意查收');
     countdown = 60;
@@ -77,8 +82,9 @@ async function reg(){
   const c = document.getElementById('emailCode').value.trim();
   const p = document.getElementById('password').value.trim();
   if(!u||!e||!c||!p) return alert('请填写完整');
-  
-  const res = await fetch('/api/user?action=register',{
+  
+  // 注册接口修正 /api/user/register
+  const res = await fetch('/api/user/register',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({username:u, email:e, code:c, password:p})
