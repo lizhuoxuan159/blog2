@@ -1,4 +1,4 @@
-import { createHmac, crypto } from 'crypto';
+import { createHmac } from "node:crypto";
 
 // ===================== 全局安全工具（内置防注入、防彩虹表核心） =====================
 /**
