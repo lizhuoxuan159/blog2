@@ -1,11 +1,11 @@
-function jsonResp(data, status = 200) {
+ï»¿function jsonResp(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8' }
   });
 }
 
-// ¹¤¾ßº¯Êı£ºUTC×ª¶«°ËÇøÊ±¼ä
+// å·¥å…·å‡½æ•°ï¼šUTCè½¬ä¸œå…«åŒºæ—¶é—´
 function toUTC8Time(utcTime) {
   if (!utcTime) return null;
   const date = new Date(utcTime);
@@ -14,7 +14,7 @@ function toUTC8Time(utcTime) {
   return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-// »ñÈ¡µÇÂ¼ÓÃ»§
+// è·å–ç™»å½•ç”¨æˆ·
 async function getLoginUser(request) {
   const cookieHeader = request.headers.get('Cookie') || '';
   const match = cookieHeader.match(/blog_session=([^;]+)/);
@@ -35,9 +35,9 @@ export async function onRequest({ request, env }) {
     const action = url.searchParams.get('action');
     const loginUser = await getLoginUser(request);
 
-    // ==================== ÏûÏ¢Ïà¹Ø ====================
+    // ==================== æ¶ˆæ¯ç›¸å…³ ====================
 
-    // »ñÈ¡ÏûÏ¢ÁĞ±í
+    // è·å–æ¶ˆæ¯åˆ—è¡¨
     if (request.method === 'GET' && action === 'list') {
       const limit = parseInt(url.searchParams.get('limit')) || 30;
       const page = parseInt(url.searchParams.get('page')) || 1;
@@ -52,7 +52,7 @@ export async function onRequest({ request, env }) {
         LIMIT ? OFFSET ?
       `).bind(limit, offset).all();
 
-      // ²éÑ¯µ±Ç°ÓÃ»§µãÔŞÁËÄÄĞ©ÏûÏ¢
+      // æŸ¥è¯¢å½“å‰ç”¨æˆ·ç‚¹èµäº†å“ªäº›æ¶ˆæ¯
       let likedIds = new Set();
       if (loginUser) {
         const likes = await db.prepare(`
@@ -64,7 +64,7 @@ export async function onRequest({ request, env }) {
       const list = rawList.results.map(item => {
         let displayName = item.username;
         if (item.is_cancel === 1 || item.username === null) {
-          displayName = "ÕË»§ÒÑ×¢Ïú";
+          displayName = "è´¦æˆ·å·²æ³¨é”€";
         }
         return {
           id: item.id,
@@ -82,10 +82,10 @@ export async function onRequest({ request, env }) {
       return jsonResp(list);
     }
 
-    // ·¢²¼ÏûÏ¢
+    // å‘å¸ƒæ¶ˆæ¯
     if (request.method === 'POST' && action === 'send') {
-      if (!loginUser) return jsonResp({ code: 99, msg: 'ÇëÏÈµÇÂ¼' }, 401);
-      // ¼ì²éÊÇ·ñ±»ÁÙÊ±½ûÑÔ
+      if (!loginUser) return jsonResp({ code: 99, msg: 'è¯·å…ˆç™»å½•' }, 401);
+      // æ£€æŸ¥æ˜¯å¦è¢«ä¸´æ—¶ç¦è¨€
 const userInfo = await db.prepare(`
   SELECT role, ban_until FROM users WHERE id = ?
 `).bind(loginUser.uid).first();
@@ -93,23 +93,23 @@ const userInfo = await db.prepare(`
 if (userInfo?.ban_until) {
   const banUntil = new Date(userInfo.ban_until).getTime();
   if (banUntil > Date.now()) {
-    return jsonResp({ code: 98, msg: 'ÄãÒÑ±»½ûÑÔ£¬ÔİÊ±ÎŞ·¨·¢ÑÔ' }, 403);
+    return jsonResp({ code: 98, msg: 'ä½ å·²è¢«ç¦è¨€ï¼Œæš‚æ—¶æ— æ³•å‘è¨€' }, 403);
   } else {
-    // ½ûÑÔÒÑµ½ÆÚ£¬×Ô¶¯½â·â
+    // ç¦è¨€å·²åˆ°æœŸï¼Œè‡ªåŠ¨è§£å°
     await db.prepare(`UPDATE users SET ban_until = NULL WHERE id = ?`).bind(loginUser.uid).run();
   }
 }
       const banRole = ['banned'];
       if (banRole.includes(loginUser.role)) {
-        return jsonResp({ code: 98, msg: '·â½ûÕËºÅÎŞ·¨·¢ËÍÏûÏ¢' }, 403);
+        return jsonResp({ code: 98, msg: 'å°ç¦è´¦å·æ— æ³•å‘é€æ¶ˆæ¯' }, 403);
       }
 
       const { content } = await request.json();
       if (!content || !content.trim()) {
-        return jsonResp({ code: 1, msg: 'ÏûÏ¢ÄÚÈİ²»ÄÜÎª¿Õ' });
+        return jsonResp({ code: 1, msg: 'æ¶ˆæ¯å†…å®¹ä¸èƒ½ä¸ºç©º' });
       }
       if (content.length > 500) {
-        return jsonResp({ code: 2, msg: 'ÏûÏ¢²»ÄÜ³¬¹ı500×Ö' });
+        return jsonResp({ code: 2, msg: 'æ¶ˆæ¯ä¸èƒ½è¶…è¿‡500å­—' });
       }
 
       const result = await db.prepare(`
@@ -117,69 +117,69 @@ if (userInfo?.ban_until) {
         VALUES (?, ?)
       `).bind(loginUser.uid, content.trim()).run();
 
-      return jsonResp({ code: 0, msg: '·¢ËÍ³É¹¦', id: result.meta.last_row_id });
+      return jsonResp({ code: 0, msg: 'å‘é€æˆåŠŸ', id: result.meta.last_row_id });
     }
 
-    // É¾³ıÏûÏ¢
+    // åˆ é™¤æ¶ˆæ¯
     if (request.method === 'POST' && action === 'delete') {
-      if (!loginUser) return jsonResp({ code: 99, msg: 'ÇëÏÈµÇÂ¼' }, 401);
+      if (!loginUser) return jsonResp({ code: 99, msg: 'è¯·å…ˆç™»å½•' }, 401);
 
       const { msgId } = await request.json();
       const msg = await db.prepare(`SELECT user_id FROM messages WHERE id = ?`)
         .bind(msgId).first();
 
-      if (!msg) return jsonResp({ code: 1, msg: 'ÏûÏ¢²»´æÔÚ' });
+      if (!msg) return jsonResp({ code: 1, msg: 'æ¶ˆæ¯ä¸å­˜åœ¨' });
 
       const isAdmin = ['admin', 'owner'].includes(loginUser.role);
       if (!isAdmin && msg.user_id !== loginUser.uid) {
-        return jsonResp({ code: 98, msg: 'ÎŞÈ¨É¾³ıÕâÌõÏûÏ¢' }, 403);
+        return jsonResp({ code: 98, msg: 'æ— æƒåˆ é™¤è¿™æ¡æ¶ˆæ¯' }, 403);
       }
 
-      // É¾³ıÏûÏ¢¡¢Ïà¹ØµãÔŞºÍÆÀÂÛ
+      // åˆ é™¤æ¶ˆæ¯ã€ç›¸å…³ç‚¹èµå’Œè¯„è®º
       await db.prepare(`DELETE FROM messages WHERE id = ?`).bind(msgId).run();
       await db.prepare(`DELETE FROM message_likes WHERE message_id = ?`).bind(msgId).run();
       await db.prepare(`DELETE FROM message_comments WHERE message_id = ?`).bind(msgId).run();
 
-      return jsonResp({ code: 0, msg: 'É¾³ı³É¹¦' });
+      return jsonResp({ code: 0, msg: 'åˆ é™¤æˆåŠŸ' });
     }
 
-    // µãÔŞ/È¡ÏûµãÔŞ
+    // ç‚¹èµ/å–æ¶ˆç‚¹èµ
     if (request.method === 'POST' && action === 'like') {
-      if (!loginUser) return jsonResp({ code: 99, msg: 'ÇëÏÈµÇÂ¼' }, 401);
+      if (!loginUser) return jsonResp({ code: 99, msg: 'è¯·å…ˆç™»å½•' }, 401);
 
       const { msgId } = await request.json();
       const msg = await db.prepare(`SELECT id FROM messages WHERE id = ?`)
         .bind(msgId).first();
 
-      if (!msg) return jsonResp({ code: 1, msg: 'ÏûÏ¢²»´æÔÚ' });
+      if (!msg) return jsonResp({ code: 1, msg: 'æ¶ˆæ¯ä¸å­˜åœ¨' });
 
-      // ¼ì²éÊÇ·ñÒÑ¾­µãÔŞ
+      // æ£€æŸ¥æ˜¯å¦å·²ç»ç‚¹èµ
       const existing = await db.prepare(`
         SELECT id FROM message_likes WHERE message_id = ? AND user_id = ?
       `).bind(msgId, loginUser.uid).first();
 
       if (existing) {
-        // È¡ÏûµãÔŞ
+        // å–æ¶ˆç‚¹èµ
         await db.prepare(`DELETE FROM message_likes WHERE id = ?`).bind(existing.id).run();
         await db.prepare(`UPDATE messages SET like_count = like_count - 1 WHERE id = ?`)
           .bind(msgId).run();
-        return jsonResp({ code: 0, msg: 'ÒÑÈ¡ÏûµãÔŞ', liked: false, likeCount: -1 });
+        return jsonResp({ code: 0, msg: 'å·²å–æ¶ˆç‚¹èµ', liked: false, likeCount: -1 });
       } else {
-        // µãÔŞ
+        // ç‚¹èµ
         await db.prepare(`INSERT INTO message_likes (message_id, user_id) VALUES (?, ?)`)
           .bind(msgId, loginUser.uid).run();
         await db.prepare(`UPDATE messages SET like_count = like_count + 1 WHERE id = ?`)
           .bind(msgId).run();
-        return jsonResp({ code: 0, msg: 'µãÔŞ³É¹¦', liked: true, likeCount: 1 });
+        return jsonResp({ code: 0, msg: 'ç‚¹èµæˆåŠŸ', liked: true, likeCount: 1 });
       }
     }
 
-    // ==================== ÆÀÂÛÏà¹Ø ====================
+    // ==================== è¯„è®ºç›¸å…³ ====================
 
-    // »ñÈ¡ÆÀÂÛÁĞ±í
+    // è·å–è¯„è®ºåˆ—è¡¨
     if (request.method === 'GET' && action === 'getComments') {
       const msgId = url.searchParams.get('msgId');
-      if (!msgId) return jsonResp({ code: 1, msg: '²ÎÊı´íÎó' });
+      if (!msgId) return jsonResp({ code: 1, msg: 'å‚æ•°é”™è¯¯' });
 
       const rawComments = await db.prepare(`
         SELECT c.id, c.content, c.reply_to, c.created_at, c.user_id,
@@ -193,7 +193,7 @@ if (userInfo?.ban_until) {
       const comments = rawComments.results.map(item => {
         let displayName = item.username;
         if (item.is_cancel === 1 || item.username === null) {
-          displayName = "ÕË»§ÒÑ×¢Ïú";
+          displayName = "è´¦æˆ·å·²æ³¨é”€";
         }
         return {
           id: item.id,
@@ -209,10 +209,10 @@ if (userInfo?.ban_until) {
       return jsonResp(comments);
     }
 
-    // ·¢±íÆÀÂÛ
+    // å‘è¡¨è¯„è®º
     if (request.method === 'POST' && action === 'addComment') {
-      if (!loginUser) return jsonResp({ code: 99, msg: 'ÇëÏÈµÇÂ¼' }, 401);
-// ¼ì²éÊÇ·ñ±»ÁÙÊ±½ûÑÔ
+      if (!loginUser) return jsonResp({ code: 99, msg: 'è¯·å…ˆç™»å½•' }, 401);
+// æ£€æŸ¥æ˜¯å¦è¢«ä¸´æ—¶ç¦è¨€
 const userInfo = await db.prepare(`
   SELECT role, ban_until FROM users WHERE id = ?
 `).bind(loginUser.uid).first();
@@ -220,44 +220,44 @@ const userInfo = await db.prepare(`
 if (userInfo?.ban_until) {
   const banUntil = new Date(userInfo.ban_until).getTime();
   if (banUntil > Date.now()) {
-    return jsonResp({ code: 98, msg: 'ÄãÒÑ±»½ûÑÔ£¬ÔİÊ±ÎŞ·¨·¢ÑÔ' }, 403);
+    return jsonResp({ code: 98, msg: 'ä½ å·²è¢«ç¦è¨€ï¼Œæš‚æ—¶æ— æ³•å‘è¨€' }, 403);
   } else {
-    // ½ûÑÔÒÑµ½ÆÚ£¬×Ô¶¯½â·â
+    // ç¦è¨€å·²åˆ°æœŸï¼Œè‡ªåŠ¨è§£å°
     await db.prepare(`UPDATE users SET ban_until = NULL WHERE id = ?`).bind(loginUser.uid).run();
   }
 }
       const banRole = ['banned'];
       if (banRole.includes(loginUser.role)) {
-        return jsonResp({ code: 98, msg: '·â½ûÕËºÅÎŞ·¨ÆÀÂÛ' }, 403);
+        return jsonResp({ code: 98, msg: 'å°ç¦è´¦å·æ— æ³•è¯„è®º' }, 403);
       }
 
       const { msgId, content, replyTo } = await request.json();
       if (!content || !content.trim()) {
-        return jsonResp({ code: 1, msg: 'ÆÀÂÛÄÚÈİ²»ÄÜÎª¿Õ' });
+        return jsonResp({ code: 1, msg: 'è¯„è®ºå†…å®¹ä¸èƒ½ä¸ºç©º' });
       }
       if (content.length > 300) {
-        return jsonResp({ code: 2, msg: 'ÆÀÂÛ²»ÄÜ³¬¹ı300×Ö' });
+        return jsonResp({ code: 2, msg: 'è¯„è®ºä¸èƒ½è¶…è¿‡300å­—' });
       }
 
       const msg = await db.prepare(`SELECT id FROM messages WHERE id = ?`)
         .bind(msgId).first();
-      if (!msg) return jsonResp({ code: 1, msg: 'ÏûÏ¢²»´æÔÚ' });
+      if (!msg) return jsonResp({ code: 1, msg: 'æ¶ˆæ¯ä¸å­˜åœ¨' });
 
       await db.prepare(`
         INSERT INTO message_comments (message_id, user_id, content, reply_to)
         VALUES (?, ?, ?, ?)
       `).bind(msgId, loginUser.uid, content.trim(), replyTo || null).run();
 
-      // ¸üĞÂÆÀÂÛÊı
+      // æ›´æ–°è¯„è®ºæ•°
       await db.prepare(`UPDATE messages SET comment_count = comment_count + 1 WHERE id = ?`)
         .bind(msgId).run();
 
-      return jsonResp({ code: 0, msg: 'ÆÀÂÛ³É¹¦' });
+      return jsonResp({ code: 0, msg: 'è¯„è®ºæˆåŠŸ' });
     }
 
-    // É¾³ıÆÀÂÛ
+    // åˆ é™¤è¯„è®º
     if (request.method === 'POST' && action === 'delComment') {
-      if (!loginUser) return jsonResp({ code: 99, msg: 'ÇëÏÈµÇÂ¼' }, 401);
+      if (!loginUser) return jsonResp({ code: 99, msg: 'è¯·å…ˆç™»å½•' }, 401);
 
       const { commentId } = await request.json();
       const comment = await db.prepare(`
@@ -266,28 +266,28 @@ if (userInfo?.ban_until) {
         WHERE c.id = ?
       `).bind(commentId).first();
 
-      if (!comment) return jsonResp({ code: 1, msg: 'ÆÀÂÛ²»´æÔÚ' });
+      if (!comment) return jsonResp({ code: 1, msg: 'è¯„è®ºä¸å­˜åœ¨' });
 
       const isAdmin = ['admin', 'owner'].includes(loginUser.role);
       if (!isAdmin && comment.user_id !== loginUser.uid) {
-        return jsonResp({ code: 98, msg: 'ÎŞÈ¨É¾³ıÕâÌõÆÀÂÛ' }, 403);
+        return jsonResp({ code: 98, msg: 'æ— æƒåˆ é™¤è¿™æ¡è¯„è®º' }, 403);
       }
 
       await db.prepare(`DELETE FROM message_comments WHERE id = ?`).bind(commentId).run();
       await db.prepare(`UPDATE messages SET comment_count = comment_count - 1 WHERE id = ?`)
         .bind(comment.message_id).run();
 
-      return jsonResp({ code: 0, msg: 'É¾³ı³É¹¦' });
+      return jsonResp({ code: 0, msg: 'åˆ é™¤æˆåŠŸ' });
     }
-    // ==================== Ë½ÁÄÏà¹Ø ====================
+    // ==================== ç§èŠç›¸å…³ ====================
 
-    // »ñÈ¡»á»°ÁĞ±í
+    // è·å–ä¼šè¯åˆ—è¡¨
     if (request.method === 'GET' && action === 'conversationList') {
-      if (!loginUser) return jsonResp({ code: 99, msg: 'ÇëÏÈµÇÂ¼' }, 401);
+      if (!loginUser) return jsonResp({ code: 99, msg: 'è¯·å…ˆç™»å½•' }, 401);
 
       const uid = loginUser.uid;
       
-      // ÕÒ³öËùÓĞºÍµ±Ç°ÓÃ»§ÁÄ¹ıÌìµÄÓÃ»§£¬ÒÔ¼°×îºóÒ»ÌõÏûÏ¢
+      // æ‰¾å‡ºæ‰€æœ‰å’Œå½“å‰ç”¨æˆ·èŠè¿‡å¤©çš„ç”¨æˆ·ï¼Œä»¥åŠæœ€åä¸€æ¡æ¶ˆæ¯
       const rawConversations = await db.prepare(`
         SELECT 
           CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as other_user_id,
@@ -300,29 +300,29 @@ if (userInfo?.ban_until) {
 
       const conversations = [];
       for (const conv of rawConversations.results) {
-        // »ñÈ¡×îºóÒ»ÌõÏûÏ¢
+        // è·å–æœ€åä¸€æ¡æ¶ˆæ¯
         const lastMsg = await db.prepare(`
           SELECT content, created_at, sender_id, is_read
           FROM private_messages
           WHERE id = ?
         `).bind(conv.last_msg_id).first();
 
-        // »ñÈ¡¶Ô·½ÓÃ»§ĞÅÏ¢
+        // è·å–å¯¹æ–¹ç”¨æˆ·ä¿¡æ¯
         const otherUser = await db.prepare(`
           SELECT username, role, is_cancel
           FROM users
           WHERE id = ?
         `).bind(conv.other_user_id).first();
 
-        // ¼ÆËãÎ´¶ÁÊı
+        // è®¡ç®—æœªè¯»æ•°
         const unreadRes = await db.prepare(`
           SELECT COUNT(*) as count
           FROM private_messages
           WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
         `).bind(conv.other_user_id, uid).first();
 
-        let displayName = otherUser?.username || 'Î´ÖªÓÃ»§';
-        if (otherUser?.is_cancel === 1) displayName = 'ÕË»§ÒÑ×¢Ïú';
+        let displayName = otherUser?.username || 'æœªçŸ¥ç”¨æˆ·';
+        if (otherUser?.is_cancel === 1) displayName = 'è´¦æˆ·å·²æ³¨é”€';
 
         conversations.push({
           userId: conv.other_user_id,
@@ -338,17 +338,17 @@ if (userInfo?.ban_until) {
       return jsonResp(conversations);
     }
 
-    // »ñÈ¡ºÍÄ³ÈËµÄÁÄÌì¼ÇÂ¼
+    // è·å–å’ŒæŸäººçš„èŠå¤©è®°å½•
     if (request.method === 'GET' && action === 'getPrivateMessages') {
-      if (!loginUser) return jsonResp({ code: 99, msg: 'ÇëÏÈµÇÂ¼' }, 401);
+      if (!loginUser) return jsonResp({ code: 99, msg: 'è¯·å…ˆç™»å½•' }, 401);
 
       const otherUserId = parseInt(url.searchParams.get('userId'));
-      if (!otherUserId) return jsonResp({ code: 1, msg: '²ÎÊı´íÎó' });
+      if (!otherUserId) return jsonResp({ code: 1, msg: 'å‚æ•°é”™è¯¯' });
 
       const uid = loginUser.uid;
       const limit = parseInt(url.searchParams.get('limit')) || 50;
 
-      // »ñÈ¡ÏûÏ¢£¨×îĞÂµÄ50Ìõ£¬È»ºóµ¹Ğò£©
+      // è·å–æ¶ˆæ¯ï¼ˆæœ€æ–°çš„50æ¡ï¼Œç„¶åå€’åºï¼‰
       const rawMsgs = await db.prepare(`
         SELECT id, sender_id, receiver_id, content, is_read, created_at
         FROM private_messages
@@ -357,14 +357,14 @@ if (userInfo?.ban_until) {
         LIMIT ?
       `).bind(uid, otherUserId, otherUserId, uid, limit).all();
 
-      // ±ê¼ÇÎªÒÑ¶Á£¨¶Ô·½·¢µÄÏûÏ¢£©
+      // æ ‡è®°ä¸ºå·²è¯»ï¼ˆå¯¹æ–¹å‘çš„æ¶ˆæ¯ï¼‰
       await db.prepare(`
         UPDATE private_messages
         SET is_read = 1
         WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
       `).bind(otherUserId, uid).run();
 
-      // µ¹ĞòÅÅÁĞ£¨×îĞÂµÄÔÚÏÂÃæ£©
+      // å€’åºæ’åˆ—ï¼ˆæœ€æ–°çš„åœ¨ä¸‹é¢ï¼‰
       const messages = rawMsgs.results.reverse().map(msg => ({
         id: msg.id,
         content: msg.content,
@@ -376,10 +376,10 @@ if (userInfo?.ban_until) {
       return jsonResp(messages);
     }
 
-    // ·¢ËÍË½ÁÄÏûÏ¢
+    // å‘é€ç§èŠæ¶ˆæ¯
     if (request.method === 'POST' && action === 'sendPrivate') {
-      if (!loginUser) return jsonResp({ code: 99, msg: 'ÇëÏÈµÇÂ¼' }, 401);
-// ¼ì²éÊÇ·ñ±»ÁÙÊ±½ûÑÔ
+      if (!loginUser) return jsonResp({ code: 99, msg: 'è¯·å…ˆç™»å½•' }, 401);
+// æ£€æŸ¥æ˜¯å¦è¢«ä¸´æ—¶ç¦è¨€
 const userInfo = await db.prepare(`
   SELECT role, ban_until FROM users WHERE id = ?
 `).bind(loginUser.uid).first();
@@ -387,35 +387,35 @@ const userInfo = await db.prepare(`
 if (userInfo?.ban_until) {
   const banUntil = new Date(userInfo.ban_until).getTime();
   if (banUntil > Date.now()) {
-    return jsonResp({ code: 98, msg: 'ÄãÒÑ±»½ûÑÔ£¬ÔİÊ±ÎŞ·¨·¢ÑÔ' }, 403);
+    return jsonResp({ code: 98, msg: 'ä½ å·²è¢«ç¦è¨€ï¼Œæš‚æ—¶æ— æ³•å‘è¨€' }, 403);
   } else {
-    // ½ûÑÔÒÑµ½ÆÚ£¬×Ô¶¯½â·â
+    // ç¦è¨€å·²åˆ°æœŸï¼Œè‡ªåŠ¨è§£å°
     await db.prepare(`UPDATE users SET ban_until = NULL WHERE id = ?`).bind(loginUser.uid).run();
   }
 }
       const banRole = ['banned'];
       if (banRole.includes(loginUser.role)) {
-        return jsonResp({ code: 98, msg: '·â½ûÕËºÅÎŞ·¨·¢ËÍÏûÏ¢' }, 403);
+        return jsonResp({ code: 98, msg: 'å°ç¦è´¦å·æ— æ³•å‘é€æ¶ˆæ¯' }, 403);
       }
 
       const { userId, content } = await request.json();
       if (!userId || !content || !content.trim()) {
-        return jsonResp({ code: 1, msg: '²ÎÊı´íÎó' });
+        return jsonResp({ code: 1, msg: 'å‚æ•°é”™è¯¯' });
       }
       if (content.length > 500) {
-        return jsonResp({ code: 2, msg: 'ÏûÏ¢²»ÄÜ³¬¹ı500×Ö' });
+        return jsonResp({ code: 2, msg: 'æ¶ˆæ¯ä¸èƒ½è¶…è¿‡500å­—' });
       }
 
-      // ¼ì²é¶Ô·½ÓÃ»§ÊÇ·ñ´æÔÚ
+      // æ£€æŸ¥å¯¹æ–¹ç”¨æˆ·æ˜¯å¦å­˜åœ¨
       const receiver = await db.prepare(`
         SELECT id, is_cancel FROM users WHERE id = ?
       `).bind(userId).first();
-      if (!receiver) return jsonResp({ code: 1, msg: 'ÓÃ»§²»´æÔÚ' });
-      if (receiver.is_cancel === 1) return jsonResp({ code: 1, msg: '¶Ô·½ÕË»§ÒÑ×¢Ïú' });
+      if (!receiver) return jsonResp({ code: 1, msg: 'ç”¨æˆ·ä¸å­˜åœ¨' });
+      if (receiver.is_cancel === 1) return jsonResp({ code: 1, msg: 'å¯¹æ–¹è´¦æˆ·å·²æ³¨é”€' });
 
-      // ²»ÄÜ¸ø×Ô¼º·¢ÏûÏ¢
+      // ä¸èƒ½ç»™è‡ªå·±å‘æ¶ˆæ¯
       if (userId === loginUser.uid) {
-        return jsonResp({ code: 1, msg: '²»ÄÜ¸ø×Ô¼º·¢ÏûÏ¢' });
+        return jsonResp({ code: 1, msg: 'ä¸èƒ½ç»™è‡ªå·±å‘æ¶ˆæ¯' });
       }
 
       const result = await db.prepare(`
@@ -425,13 +425,13 @@ if (userInfo?.ban_until) {
 
       return jsonResp({ 
         code: 0, 
-        msg: '·¢ËÍ³É¹¦',
+        msg: 'å‘é€æˆåŠŸ',
         id: result.meta.last_row_id,
         createTime: toUTC8Time(new Date().toISOString())
       });
     }
 
-    // »ñÈ¡Î´¶ÁÏûÏ¢×ÜÊı
+    // è·å–æœªè¯»æ¶ˆæ¯æ€»æ•°
     if (request.method === 'GET' && action === 'getUnreadCount') {
       if (!loginUser) return jsonResp({ total: 0 });
 
@@ -444,9 +444,9 @@ if (userInfo?.ban_until) {
       return jsonResp({ total: res?.total || 0 });
     }
 
-    // ±ê¼Ç»á»°ÒÑ¶Á
+    // æ ‡è®°ä¼šè¯å·²è¯»
     if (request.method === 'POST' && action === 'markRead') {
-      if (!loginUser) return jsonResp({ code: 99, msg: 'ÇëÏÈµÇÂ¼' }, 401);
+      if (!loginUser) return jsonResp({ code: 99, msg: 'è¯·å…ˆç™»å½•' }, 401);
 
       const { userId } = await request.json();
       await db.prepare(`
@@ -455,11 +455,11 @@ if (userInfo?.ban_until) {
         WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
       `).bind(userId, loginUser.uid).run();
 
-      return jsonResp({ code: 0, msg: 'ÒÑ±ê¼ÇÎªÒÑ¶Á' });
+      return jsonResp({ code: 0, msg: 'å·²æ ‡è®°ä¸ºå·²è¯»' });
     }
-    return jsonResp({ code: 99, msg: '½Ó¿Ú²»´æÔÚ' }, 404);
+    return jsonResp({ code: 99, msg: 'æ¥å£ä¸å­˜åœ¨' }, 404);
   } catch (e) {
-    console.error("ÁÄÌì½Ó¿Ú²¶»ñÒì³££º", e);
-    return jsonResp({ code: 500, msg: '·şÎñÆ÷´íÎó£º' + e.message, err: e.message }, 500);
+    console.error("èŠå¤©æ¥å£æ•è·å¼‚å¸¸ï¼š", e);
+    return jsonResp({ code: 500, msg: 'æœåŠ¡å™¨é”™è¯¯ï¼š' + e.message, err: e.message }, 500);
   }
 }
