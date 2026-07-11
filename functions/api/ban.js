@@ -21,11 +21,25 @@ function getSessionCookie(request) {
     return cookieMap.sid || null;
 }
 
+// Web Crypto API HMAC-SHA256（CF Pages 原生，零依赖）
+async function hmacSha256Hex(message, secret) {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+    return Array.from(new Uint8Array(sig))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+}
 async function verifySessionToken(token, secret) {
-    const { createHmac } = await import("crypto");
     const [uid, sig] = token.split(".");
     if (!uid || !sig) return null;
-    const realSig = createHmac("sha256", secret).update(uid).digest("hex");
+    const realSig = await hmacSha256Hex(uid, secret);
     return sig === realSig ? Number(uid) : null;
 }
 

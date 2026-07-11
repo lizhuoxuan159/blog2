@@ -1,4 +1,18 @@
-import { createHmac } from "node:crypto";
+// Web Crypto API 实现 HMAC-SHA256（CF Pages 原生支持，零依赖）
+async function hmacSha256Hex(message, secret) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  return Array.from(new Uint8Array(sig))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 // ===================== 全局安全工具（内置防注入、防彩虹表核心） =====================
 /**
@@ -13,7 +27,7 @@ import { createHmac } from "node:crypto";
  */
 async function getAdminUid(request, secret, db) {
     const sid = getSessionCookie(request);
-    const loginUid = verifySessionToken(sid, secret);
+    const loginUid = await verifySessionToken(sid, secret);
     if (!loginUid) return null;
     const user = await db.prepare(`SELECT role FROM users WHERE id = ?`).bind(loginUid).first();
     if (!user) return null;
@@ -29,7 +43,7 @@ async function getAdminUid(request, secret, db) {
 async function adminCreateUser(db, username, password, role, secret) {
     const exist = await db.prepare(`SELECT id FROM users WHERE username = ?`).bind(username).first();
     if (exist) return { ok: false, msg: "该用户名已存在" };
-    const safePwd = secureHashPassword(password, secret);
+    const safePwd = await secureHashPassword(password, secret);
     await db.prepare(`INSERT INTO users (username, password, role) VALUES (?, ?, ?)`).bind(username, safePwd, role).run();
     return { ok: true, msg: "创建用户成功" };
 }
@@ -93,24 +107,22 @@ const fail = (msg = "操作失败", code = 400) => {
  * raw：原始明文密码
  * secret：环境变量SESSION_HMAC_SECRET（随机长字符串，不泄露）
  */
-const secureHashPassword = (raw, secret) => {
-  return createHmac("sha256", secret)
-    .update(raw.trim())
-    .digest("hex");
+const secureHashPassword = async (raw, secret) => {
+  return hmacSha256Hex(raw.trim(), secret);
 }
 
 /**
  * 会话Cookie HMAC签名，防篡改、伪造登录凭证
  */
-const signSessionToken = (uid, secret) => {
+const signSessionToken = async (uid, secret) => {
   const payload = String(uid);
-  const signature = createHmac("sha256", secret).update(payload).digest("hex");
+  const signature = await hmacSha256Hex(payload, secret);
   return `${payload}.${signature}`;
 }
-const verifySessionToken = (token, secret) => {
+const verifySessionToken = async (token, secret) => {
   const [uid, sig] = token.split(".");
   if (!uid || !sig) return null;
-  const realSig = createHmac("sha256", secret).update(uid).digest("hex");
+  const realSig = await hmacSha256Hex(uid, secret);
   return sig === realSig ? Number(uid) : null;
 }
 
@@ -174,7 +186,7 @@ export default {
       if (existUser) return fail("用户名或邮箱已被注册");
 
       // 加盐哈希密码入库，抵御彩虹表
-      const safePwd = secureHashPassword(password, HMAC_SALT);
+      const safePwd = await secureHashPassword(password, HMAC_SALT);
       await db.prepare(`
         INSERT INTO users (username, password, email) VALUES (?, ?, ?)
       `).bind(username, safePwd, email).run();
@@ -196,11 +208,11 @@ export default {
       if (blockMsg) return fail(blockMsg, 403);
 
       // 加盐比对密码，防彩虹表破解
-      const inputHash = secureHashPassword(password, HMAC_SALT);
+      const inputHash = await secureHashPassword(password, HMAC_SALT);
       if (inputHash !== user.password) return fail("用户名或密码错误");
 
       // 生成安全会话Cookie
-      const sessionToken = signSessionToken(user.id, HMAC_SALT);
+      const sessionToken = await signSessionToken(user.id, HMAC_SALT);
       return success(
         { uid: user.id, username: user.username, role: user.role },
         "登录成功",
@@ -254,7 +266,7 @@ export default {
       if (!validCode) return fail("验证码无效或已过期");
 
       // 新密码加盐哈希
-      const newSafeHash = secureHashPassword(newPwd, HMAC_SALT);
+      const newSafeHash = await secureHashPassword(newPwd, HMAC_SALT);
       await db.prepare(`
         UPDATE users SET password = ? WHERE email = ?
       `).bind(newSafeHash, email).run();
@@ -270,7 +282,7 @@ export default {
     // 6. 永久注销账户 POST /api/user/cancel
     if (path === "/api/user/cancel" && method === "POST") {
       const sid = getSessionCookie(request);
-      const loginUid = verifySessionToken(sid, HMAC_SALT);
+      const loginUid = await verifySessionToken(sid, HMAC_SALT);
       if (!loginUid) return fail("请先登录", 401);
       // 标记注销，不再允许登录
       await db.prepare("UPDATE users SET is_cancel = 1 WHERE id = ?").bind(loginUid).run();
@@ -340,7 +352,7 @@ export default {
       if (blockMsg) return fail(blockMsg, 403);
 
       // 下发7天登录Cookie，跳转首页
-      const sessionToken = signSessionToken(loginUser.id, HMAC_SALT);
+      const sessionToken = await signSessionToken(loginUser.id, HMAC_SALT);
       return new Response("", {
         status: 302,
         headers: {
@@ -407,7 +419,7 @@ export default {
       const blockMsg = checkUserBlockStatus(loginUser);
       if (blockMsg) return fail(blockMsg, 403);
 
-      const sessionToken = signSessionToken(loginUser.id, HMAC_SALT);
+      const sessionToken = await signSessionToken(loginUser.id, HMAC_SALT);
       return new Response("", {
         status: 302,
         headers: {
@@ -421,7 +433,7 @@ export default {
     if (path === "/api/user/admin/ban" && method === "POST") {
       // 校验管理员登录权限
       const sid = getSessionCookie(request);
-      const adminUid = verifySessionToken(sid, HMAC_SALT);
+      const adminUid = await verifySessionToken(sid, HMAC_SALT);
       if (!adminUid) return fail("未登录管理员账号", 401);
       const adminUser = await db.prepare("SELECT role FROM users WHERE id = ?").bind(adminUid).first();
       if (!adminUser || (adminUser.role !== "admin" && adminUser.role !== "owner")) {
@@ -469,7 +481,7 @@ export default {
         // ========== 4.简易获取当前登录用户信息（替代原来的 /api/user?action=check）GET /api/user/check ==========
         if (path === "/api/user/check" && method === "GET") {
             const sid = getSessionCookie(request);
-            const loginUid = verifySessionToken(sid, HMAC_SALT);
+            const loginUid = await verifySessionToken(sid, HMAC_SALT);
             if (!loginUid) {
                 return success({ login: false });
             }
@@ -485,7 +497,7 @@ export default {
     // ========== 管理员接口：查询全部用户 GET /api/user/admin/list ==========
     if (path === "/api/user/admin/list" && method === "GET") {
       const sid = getSessionCookie(request);
-      const adminUid = verifySessionToken(sid, HMAC_SALT);
+      const adminUid = await verifySessionToken(sid, HMAC_SALT);
       if (!adminUid) return fail("未登录管理员账号", 401);
       const adminUser = await db.prepare("SELECT role FROM users WHERE id = ?").bind(adminUid).first();
       if (!adminUser || (adminUser.role !== "admin" && adminUser.role !== "owner")) {
@@ -511,11 +523,11 @@ export default {
 
             // 查询当前账号原始密码
             const userRow = await db.prepare(`SELECT password FROM users WHERE id = ?`).bind(loginUid).first();
-            const oldHash = secureHashPassword(oldPwd, HMAC_SALT);
+            const oldHash = await secureHashPassword(oldPwd, HMAC_SALT);
             if (oldHash !== user.password) return fail("原密码错误");
 
             // 生成新密码哈希并更新
-            const newHash = secureHashPassword(newPwd, HMAC_SALT);
+            const newHash = await secureHashPassword(newPwd, HMAC_SALT);
             await db.prepare(`UPDATE users SET password = ? WHERE id = ?`).bind(newHash, loginUid).run();
 
             return success(null, "密码修改成功，请重新登录");
