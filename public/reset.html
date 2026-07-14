@@ -1,51 +1,50 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>重置密码</title>
-<link rel="stylesheet" href="/css/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>重置密码</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" href="/favicon.ico">
 </head>
 <body>
-<div class="container">
-  <nav>
-    <a href="/login.html"><button class="glass-btn">返回登录</button></a>
-  </nav>
-  <div class="glass" style="max-width:420px;margin:0 auto">
-    <h2>重置账户密码</h2>
-    <input type="email" id="email" placeholder="注册邮箱">
-    <input type="text" id="code" placeholder="6位验证码">
-    <input type="password" id="newPwd" placeholder="新密码">
-    <button class="glass-btn" style="width:100%;margin-top:12px" onclick="resetPassword()">确认重置</button>
-  </div>
-</div>
-<script>
-// 读取地址栏邮箱回填
-const urlParams = new URLSearchParams(location.search);
-document.getElementById('email').value = urlParams.get('email') || '';
-
-async function resetPassword(){
-  const email = document.getElementById('email').value.trim();
-  const code = document.getElementById('code').value.trim();
-  const newPwd = document.getElementById('newPwd').value.trim();
-  if(!email || !code || !newPwd) return alert('请填写完整信息');
-  const btn = event.target;
-  btn.disabled = true;
-  try{
-    const res = await fetch('/api/user/reset-pwd',{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({email,code,newPwd})
-    })
-    const data = await res.json();
-    alert(data.msg);
-    if(data.code===0) location.href="/login.html";
-  }catch(e){
-    alert('重置请求失败');
-    console.error(e);
-  }
-  btn.disabled = false;
-}
-</script>
+    <div class="container">
+        <nav>
+            <a href="/login.html"><button class="glass-btn">返回登录</button></a>
+        </nav>
+        <div class="glass" style="max-width:420px;margin:0 auto">
+            <h2>重置账户密码</h2>
+            <input type="email" id="email" placeholder="注册邮箱">
+            <input type="text" id="code" placeholder="6位验证码">
+            <input type="password" id="newPwd" placeholder="新密码">
+            <button class="glass-btn" style="width:100%;margin-top:12px" onclick="resetPassword()">确认重置</button>
+        </div>
+    </div>
+    <script>
+        const urlParams = new URLSearchParams(location.search);
+        document.getElementById('email').value = urlParams.get('email') || '';
+        async function resetPassword() {
+            const email = document.getElementById('email').value.trim();
+            const code = document.getElementById('code').value.trim();
+            const newPwd = document.getElementById('newPwd').value.trim();
+            if (!email || !code || !newPwd) return alert('请填写完整信息');
+            const btn = event.target;
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/user/reset-pwd', {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, code, newPwd })
+                })
+                const data = await res.json();
+                alert(data.msg);
+                if (data.code === 0) location.href = "/login.html";
+            } catch (e) {
+                alert('重置请求失败');
+                console.error(e);
+            }
+            btn.disabled = false;
+        }
+    </script>
 </body>
 </html>
