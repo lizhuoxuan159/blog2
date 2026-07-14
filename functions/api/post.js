@@ -270,7 +270,6 @@ export async function onRequest({ request, env }) {
             if (banRole.includes(loginUser.role)) {
                 return jsonResp({ code: 98, msg: '封禁账号无法发表评论' }, 403);
             }
-            const { postId, content } = await request.json();
             if (!content.trim()) return jsonResp({ code: 1, msg: '评论内容不能为空' });
             const p = await db.prepare("SELECT publish FROM posts WHERE id=?").bind(postId).first();
             if (!p) return jsonResp({ code: 1, msg: '文章不存在' });
