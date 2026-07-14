@@ -1,6 +1,2 @@
- M .gitignore
- M public/account.html
- M public/login.html
- M public/register.html
- M public/reset.html
+ M sync.bat
  M temp.txt
