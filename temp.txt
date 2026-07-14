@@ -1,2 +1,1 @@
- M sync.bat
  M temp.txt
