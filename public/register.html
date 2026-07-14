@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>注册</title>
+    <title>注册账号</title>
     <link rel="stylesheet" href="/css/style.css">
-    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/sitekey.js" defer></script>
 </head>
 <body>
     <div class="container">
@@ -16,69 +16,77 @@
             <h2>用户注册</h2>
             <input type="text" id="username" placeholder="用户名">
             <input type="email" id="email" placeholder="邮箱">
-            <div style="display:flex;gap:10px">
+            <div style="display:flex;gap:8px">
                 <input type="text" id="emailCode" placeholder="邮箱验证码" style="flex:1">
-                <button class="glass-btn" id="sendCodeBtn" onclick="sendEmailCode()" style="white-space:nowrap">发送验证码</button>
+                <button class="glass-btn" id="sendCodeBtn" onclick="sendEmailCode()">获取验证码</button>
             </div>
-            <input type="password" id="password" placeholder="密码">
-            <button class="glass-btn" style="width:100%" onclick="reg()">注册</button>
-            <a href="/api/user/github">
-                <button class="glass-btn" style="width:100%;margin-top:12px;background:rgba(30,30,0.2)">使用 GitHub 快捷登录/注册</button>
-            </a>
-            <p style="margin-top:12px;text-align:center">已有账号？<a href="/login.html">去登录</a></p>
+            <input type="password" id="password" placeholder="设置密码">
+            <!-- CF组件 -->
+            <div class="cf-turnstile" data-sitekey="0x4AAAAAAACqx_2fZzYHAdKA2"></div>
+            <button class="glass-btn" style="width:100%" onclick="reg()">完成注册</button>
+            <p style="text-align:center;margin-top:15px">已有账号 <a href="/login.html">去登录</a></p>
         </div>
     </div>
     <script>
-        let countdown = 0;
-        let timer = null;
+        let countdownTimer = null;
+
         async function sendEmailCode() {
-            const email = document.getElementById('email').value.trim();
-            if (!email) return alert('请先输入邮箱');
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return alert('邮箱格式不正确');
-            if (countdown > 0) return;
-            const btn = document.getElementById('sendCodeBtn');
+            const email = document.getElementById("email").value.trim();
+            const btn = document.getElementById("sendCodeBtn");
+            const cfToken = turnstile.getResponse();
+            if (!email) return alert("填写邮箱");
+            if (!cfToken) return alert("先完成人机验证");
             btn.disabled = true;
-            btn.textContent = '发送中...';
-            const res = await fetch('/api/user/send-code', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, type: "register" })
+            try {
+                const res = await fetch("/api/user?action=sendCode", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, type: "register", cfToken })
+                });
+                const data = await res.json();
+                alert(data.msg);
+                if (data.code === 0) {
+                    let time = 60;
+                    countdownTimer = setInterval(() => {
+                        time--;
+                        btn.innerText = time + "s";
+                        if (time <= 0) {
+                            clearInterval(countdownTimer);
+                            btn.innerText = "获取验证码";
+                            btn.disabled = false;
+                        }
+                    }, 1000)
+                } else {
+                    btn.disabled = false;
+                    turnstile.reset();
+                }
+            } catch (err) {
+                alert("请求失败");
+                btn.disabled = false;
+            }
+        }
+
+        async function reg() {
+            const username = document.getElementById("username").value.trim();
+            const email = document.getElementById("email").value.trim();
+            const code = document.getElementById("emailCode").value.trim();
+            const password = document.getElementById("password").value.trim();
+            const cfToken = turnstile.getResponse();
+            if (!username || !email || !code || !password) return alert("请填写全部内容");
+            if (!cfToken) return alert("完成人机验证");
+            const res = await fetch("/api/user?action=register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, email, password, cfToken })
             });
             const data = await res.json();
             if (data.code === 0) {
-                alert('验证码已发送，请注意查收');
-                countdown = 60;
-                btn.textContent = `${countdown}秒后重发`;
-                timer = setInterval(() => {
-                    countdown--;
-                    if (countdown <= 0) {
-                        clearInterval(timer);
-                        btn.disabled = false;
-                        btn.textContent = '发送验证码';
-                    } else {
-                        btn.textContent = `${countdown}秒后重发`;
-                    }
-                }, 1000);
+                alert("注册成功，请登录");
+                location.href = "/login.html";
             } else {
-                alert(data.msg || '发送失败');
-                btn.disabled = false;
-                btn.textContent = '发送验证码';
+                alert(data.msg);
+                turnstile.reset();
             }
-        }
-        async function reg() {
-            const u = document.getElementById('username').value.trim();
-            const e = document.getElementById('email').value.trim();
-            const c = document.getElementById('emailCode').value.trim();
-            const p = document.getElementById('password').value.trim();
-            if (!u || !e || !c || !p) return alert('请填写完整');
-            const res = await fetch('/api/user/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: u, email: e, code: c, password: p })
-            });
-            const data = await res.json();
-            alert(data.msg);
-            if (data.code === 0) location.href = '/login.html';
         }
     </script>
 </body>

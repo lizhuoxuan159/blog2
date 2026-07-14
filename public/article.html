@@ -58,43 +58,46 @@
   </style>
 </head>
 <body>
-<div class="container">
-  <div style="text-align:center;margin:20px 0">
-    <a href="/index.html"><button class="glass-btn">返回首页</button></a>
-    <button id="editPostBtn" class="glass-btn" style="margin-left:10px;display:none">编辑文章</button>
-    <button id="delPostBtn" class="glass-btn" style="background:rgba(255,80,80,0.25);margin-left:10px;display:none" onclick="deleteArticle()">删除此文</button>
-  </div>
-  <div class="glass" style="max-width:600px;margin:0 auto">
-    <h2 id="postTitle"></h2>
-    <p id="postInfo" style="opacity:0.8;margin:8px 0"></p>
-    <hr>
-    <div id="postContent"></div>
-  </div>
-  <!-- 编辑弹窗 -->
-  <div class="edit-modal" id="editModal">
-    <div class="edit-box">
-      <h3>编辑文章</h3>
-      <input id="editTitle" placeholder="标题">
-      <textarea id="editContent" rows="8" placeholder="内容"></textarea>
-      <div style="text-align:right;margin-top:10px">
-        <button class="glass-btn" onclick="closeEdit()">取消</button>
-        <button class="glass-btn" onclick="saveEdit()">保存</button>
-      </div>
+    <div class="container">
+        <div style="text-align:center;margin:20px 0">
+            <a href="/index.html"><button class="glass-btn">返回首页</button></a>
+            <button id="editPostBtn" class="glass-btn" style="margin-left:10px;display:none">编辑文章</button>
+            <button id="delPostBtn" class="glass-btn" style="background:rgba(255,80,80,0.25);margin-left:10px;display:none" onclick="deleteArticle()">删除此文</button>
+        </div>
+        <div class="glass" style="max-width:600px;margin:0 auto">
+            <h2 id="postTitle"></h2>
+            <p id="postInfo" style="opacity:0.8;margin:8px 0"></p>
+            <hr>
+            <div id="postContent"></div>
+        </div>
+        <!-- 编辑弹窗 -->
+        <div class="edit-modal" id="editModal">
+            <div class="edit-box">
+                <h3>编辑文章</h3>
+                <input id="editTitle" placeholder="标题">
+                <textarea id="editContent" rows="8" placeholder="内容"></textarea>
+                <div style="text-align:right;margin-top:10px">
+                    <button class="glass-btn" onclick="closeEdit()">取消</button>
+                    <button class="glass-btn" onclick="saveEdit()">保存</button>
+                </div>
+            </div>
+        </div>
+        <!-- 评论区域 -->
+        <div class="cf-turnstile" data-sitekey="0x4AAAAAAACqx_2fZzYHAdKA2"></div>
+<textarea id="commentContent" placeholder="写下你的评论"></textarea>
+        <button onclick="submitComment()">提交评论</button>
+        <div class="glass" style="max-width:600px;margin:30px auto">
+            <h3>评论区</h3>
+            <div id="cmInputArea" style="margin:15px 0;">
+                <textarea id="cmContent" style="width:100%;min-height:80px;padding:8px;border-radius:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;" placeholder="输入评论内容..."></textarea>
+                <div style="margin-top:8px;text-align:right">
+                    <button class="glass-btn" onclick="submitComment()">发表评论</button>
+                </div>
+                <p id="cmTip" style="color:#ffaaaa;margin:5px 0;display:none"></p>
+            </div>
+            <div id="commentList"></div>
+        </div>
     </div>
-  </div>
-  <!-- 评论区域 -->
-  <div class="glass" style="max-width:600px;margin:30px auto">
-    <h3>评论区</h3>
-    <div id="cmInputArea" style="margin:15px 0;">
-      <textarea id="cmContent" style="width:100%;min-height:80px;padding:8px;border-radius:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;" placeholder="输入评论内容..."></textarea>
-      <div style="margin-top:8px;text-align:right">
-        <button class="glass-btn" onclick="submitComment()">发表评论</button>
-      </div>
-      <p id="cmTip" style="color:#ffaaaa;margin:5px 0;display:none"></p>
-    </div>
-    <div id="commentList"></div>
-  </div>
-</div>
 <script>
 let postId = new URLSearchParams(location.search).get('id');
 let currentLoginUid = null;
@@ -263,7 +266,10 @@ async function submitComment(){
   if(!content){
     alert('评论内容不能为空');
     return;
-  }
+    }
+   const cfToken = turnstile.getResponse();
+   if (!content) return alert("评论不能为空");
+   if (!cfToken) return alert("请完成人机验证");
   const res = await fetch('/api/post?action=addComment',{
     method:'POST',
     headers:{'Content-Type':'application/json'},

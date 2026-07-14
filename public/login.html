@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录</title>
     <link rel="stylesheet" href="/css/style.css">
+    <!-- CF Turnstile JS -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/sitekey.js" defer></script>
 </head>
 <body>
     <div class="container">
@@ -17,85 +19,90 @@
             <input type="text" id="username" placeholder="用户名">
             <input type="password" id="password" placeholder="密码">
             <input type="text" id="totpCode" placeholder="两步验证6位验证码(未开启留空)">
+
+            <!-- Turnstile组件，填入你的sitekey -->
+            <div class="cf-turnstile" data-sitekey="0x4AAAAAAACqx_2fZzYHAdKA2"></div>
+
             <button class="glass-btn" style="width:100%" onclick="doLogin()" id="loginBtn">登录</button>
-            <a href="/api/user/github">
-                <button class="glass-btn" style="width:100%;margin-top:12px;background:rgba(30,30,0.2)">使用 GitHub 快捷登录/注册</button>
+            <a href="/api/user?action=githubLogin">
+                <button class="glass-btn" style="width:100%;margin-top:12px;background:rgba(30,30,30,0.2)">使用 GitHub 快捷登录</button>
             </a>
-            <button class="glass-btn" style="width:100%;margin-top:8px;background:rgba(0,120,212,0.2)" onclick="location.href='/api/user/microsoft'">
-                使用 Microsoft 账号登录/注册
+            <button class="glass-btn" style="width:100%;margin-top:8px;background:rgba(0,120,212,0.2)" onclick="location.href='/api/user?action=microsoftLogin'">
+                使用 Microsoft 账号登录
             </button>
             <p style="margin-top:12px;text-align:center">没有账号？<a href="/register.html">去注册</a></p>
-            <p style="margin-top:8px;text-align:center"><a href="javascript:void(0)" onclick="openForgetPwd()">忘记密码？点击获取重置验证码</a></p>
+            <p style="text-align:center"><a href="javascript:openForgetPwd()">忘记密码</a></p>
         </div>
     </div>
+
     <script>
         async function doLogin() {
-            console.log('登录按钮被点击');
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value.trim();
+            const username = document.getElementById("username").value.trim();
+            const password = document.getElementById("password").value.trim();
             const totpCode = document.getElementById("totpCode").value.trim();
-            const loginBtn = document.getElementById('loginBtn');
+            const loginBtn = document.getElementById("loginBtn");
+            // 获取CF验证结果
+            let cfToken = turnstile.getResponse();
             if (!username || !password) {
-                alert('请填写用户名和密码');
+                alert("请填写用户名和密码");
+                return;
+            }
+            if (!cfToken) {
+                alert("请先完成人机验证");
                 return;
             }
             loginBtn.disabled = true;
-            loginBtn.innerText = '登录中...';
+            loginBtn.innerText = "登录中...";
             try {
-                const res = await fetch('/api/user/login', {
-                    method: 'POST',
+                const res = await fetch("/api/user?action=login", {
+                    method: "POST",
                     headers: {
-                        'Content-Type': 'application/json; charset=utf-8'
+                        "Content-Type": "application/json; charset=utf-8"
                     },
-                    body: JSON.stringify({ username, password, totpCode })
+                    body: JSON.stringify({ username, password, totpCode, cfToken })
                 });
                 const data = await res.json();
                 if (data.code === 0) {
-                    alert('登录成功');
-                    const urlParams = new URLSearchParams(location.search);
-                    const redirectUrl = urlParams.get('redirect');
-                    if (redirectUrl) {
-                        location.href = decodeURIComponent(redirectUrl);
-                    } else {
-                        location.href = '/index.html';
-                    }
+                    const urlParams = new URLSearchParams(window.location.search);
+                    let redirectUrl = urlParams.get("redirect");
+                    if (!redirectUrl) redirectUrl = "/index.html";
+                    location.href = redirectUrl;
                 } else if (data.data?.need2fa) {
-                    alert("该账号已开启两步验证，请填写6位验证码重试");
+                    alert("该账号开启两步验证，请填写6位验证码后重试");
                 } else {
                     alert(data.msg);
+                    // 验证失败重置组件
+                    turnstile.reset();
                 }
             } catch (err) {
-                alert('接口请求异常，请检查网络或部署状态');
-                console.error('登录报错详情：', err);
+                alert("接口请求异常，请检查网络或者部署状态");
+                console.error(err);
             } finally {
                 loginBtn.disabled = false;
-                loginBtn.innerText = '登录';
+                loginBtn.innerText = "登录";
             }
         }
-        // 忘记密码 /api/user/send-code
+
+        // 忘记密码弹窗
         async function openForgetPwd() {
-            const email = prompt('请输入你的注册邮箱，系统将发送密码重置验证码：');
-            if (!email || email.trim() === '') return;
-            const targetEmail = email.trim();
-            try {
-                const res = await fetch('/api/user/send-code', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json; charset=utf-8'
-                    },
-                    body: JSON.stringify({
-                        email: targetEmail,
-                        type: "resetpwd"
-                    })
-                });
-                const data = await res.json();
-                alert(data.msg);
-                if (data.code === 0) {
-                    location.href = "/reset.html?email=" + encodeURIComponent(targetEmail);
-                }
-            } catch (err) {
-                alert('请求失败，请稍后重试');
-                console.error(err);
+            const email = prompt("输入你的注册邮箱");
+            if (!email) return;
+            let cfToken = turnstile.getResponse();
+            if (!cfToken) {
+                alert("回到页面下方完成人机验证");
+                return;
+            }
+            const res = await fetch("/api/user?action=sendCode", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, type: "resetpwd", cfToken })
+            });
+            const json = await res.json();
+            alert(json.msg);
+            if (json.code === 0) {
+                location.href = `/reset.html?email=${email}`;
+            } else {
+                turnstile.reset();
             }
         }
     </script>

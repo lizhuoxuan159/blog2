@@ -256,7 +256,9 @@ export async function onRequest({ request, env }) {
             const userInfo = await db.prepare(`
         SELECT role, ban_until FROM users WHERE id = ?
       `).bind(loginUser.uid).first();
-
+            const { postId, content, cfToken } = await request.json();
+            const cfOk = await verifyTurnstile(cfToken, env.TURNSTILE\_SECRET);
+            if (!cfOk) return jsonResp({ code: 400, msg: "人机验证失败" });
             if (userInfo?.ban_until) {
                 const banUntil = new Date(userInfo.ban_until).getTime();
                 if (banUntil > Date.now()) {
