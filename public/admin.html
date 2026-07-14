@@ -31,12 +31,11 @@
     <script>
         let myRole = "";
         let myUid = null;
-
         // 登录校验
         async function checkAuth() {
             const res = await fetch('/api/user/check');
             const data = await res.json();
-            if (!data.data.login) {
+            if (!data.data?.login) {
                 const currentUrl = location.href;
                 location.href = `/login.html?redirect=${encodeURIComponent(currentUrl)}`;
                 return;
@@ -49,13 +48,13 @@
             }
             loadUserList();
         }
-
+        // 创建用户接口 /api/user/admin-add
         async function adminCreateUser() {
             const username = document.getElementById('newUser').value.trim();
             const pwd = document.getElementById('newPwd').value.trim();
             const role = document.getElementById('newRole').value;
             if (!username || !pwd) return alert('用户名密码不能为空');
-            const res = await fetch('/api/user/admin/addUser', {
+            const res = await fetch('/api/user/admin-add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password: pwd, role })
@@ -64,9 +63,9 @@
             alert(ret.msg);
             loadUserList();
         }
-
+        // 加载用户列表 /api/user/admin-list
         async function loadUserList() {
-            const res = await fetch('/api/user/admin/list');
+            const res = await fetch('/api/user/admin-list');
             const data = await res.json();
             if (data.code !== 0) {
                 alert(data.msg);
@@ -79,21 +78,21 @@
                 let optionHtml = '';
                 if (myRole === 'owner') {
                     optionHtml = `
-            <option value="owner" ${u.role === 'owner' ? 'selected' : ''}>站主 owner</option>
-            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理员 admin</option>
-            <option value="writer" ${u.role === 'writer' ? 'selected' : ''}>作家 writer</option>
-            <option value="guest" ${u.role === 'guest' ? 'selected' : ''}>访客 guest</option>
-            <option value="banned" ${u.role === 'banned' ? 'selected' : ''}>封禁 banned</option>
-          `;
+                <option value="owner" ${u.role === 'owner' ? 'selected' : ''}>站主 owner</option>
+                <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理员 admin</option>
+                <option value="writer" ${u.role === 'writer' ? 'selected' : ''}>作家 writer</option>
+                <option value="guest" ${u.role === 'guest' ? 'selected' : ''}>访客 guest</option>
+                <option value="banned" ${u.role === 'banned' ? 'selected' : ''}>封禁 banned</option>
+              `;
                 } else {
                     if (u.role === 'owner' || u.role === 'admin') {
                         optionHtml = `<option value="${u.role}" selected>${u.role}（不可修改）</option>`;
                     } else {
                         optionHtml = `
-              <option value="guest" ${u.role === 'guest' ? 'selected' : ''}>访客 guest</option>
-              <option value="writer" ${u.role === 'writer' ? 'selected' : ''}>作家 writer</option>
-              <option value="banned" ${u.role === 'banned' ? 'selected' : ''}>封禁 banned</option>
-            `;
+                  <option value="guest" ${u.role === 'guest' ? 'selected' : ''}>访客 guest</option>
+                  <option value="writer" ${u.role === 'writer' ? 'selected' : ''}>作家 writer</option>
+                  <option value="banned" ${u.role === 'banned' ? 'selected' : ''}>封禁 banned</option>
+                `;
                     }
                 }
                 let delDisabled = false;
@@ -102,23 +101,24 @@
                 }
                 let banInfo = u.ban_until ? `封禁至:${u.ban_until}` : '';
                 let cancelInfo = u.is_cancel === 1 ? "【已注销】" : "";
+                let totpState = u.totp_secret ? "已开启2FA" : "无2FA";
                 wrap.innerHTML += `
-        <div style="margin:10px 0;padding:10px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;display:flex;align-items:center;gap:15px;flex-wrap:wrap">
-          <span>ID:${u.id} | 用户名:${escapeHtml(u.username)} | 角色:${u.role} ${banInfo} ${cancelInfo}</span>
-          <select id="role_${u.id}" ${(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')) ? 'disabled' : ''}>
-            ${optionHtml}
-          </select>
-          <button class="glass-btn" onclick="saveRole(${u.id})" ${(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')) ? 'disabled' : ''}>保存修改</button>
-          <button class="glass-btn" onclick="banUser(${u.id})">设置封禁天数</button>
-          <button class="glass-btn" style="background:rgba(255,80,80,0.25)" onclick="delUser(${u.id},'${escapeHtml(u.username)}')" ${delDisabled ? 'disabled' : ''}>删除用户</button>
-        </div>
-        `
+            <div style="margin:10px 0;padding:10px;border:1px solid rgba(255,255,0.2);border-radius:8px;display:flex;align-items:center;gap:15px;flex-wrap:wrap">
+              <span>ID:${u.id} | 用户名:${escapeHtml(u.username)} | 角色:${u.role} | ${totpState} ${banInfo} ${cancelInfo}</span>
+              <select id="role_${u.id}" ${(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')) ? 'disabled' : ''}>
+                ${optionHtml}
+              </select>
+              <button class="glass-btn" onclick="saveRole(${u.id})" ${(myRole === 'admin' && (u.role === 'owner' || u.role === '')) ? 'disabled' : ''}>保存修改</button>
+              <button class="glass-btn" onclick="banUser(${u.id})">设置封禁天数</button>
+              <button class="glass-btn" style="background:rgba(255,80,0.25)" onclick="delUser(${u.id},'${escapeHtml(u.username)}')" ${delDisabled ? 'disabled' : ''}>删除用户</button>
+            </div>
+            `
             })
         }
-
+        // 修改角色 /api/user/admin/set-role
         async function saveRole(uid) {
             const newRole = document.getElementById(`role_${uid}`).value;
-            const res = await fetch('/api/user/admin/setRole', {
+            const res = await fetch('/api/user/admin/set-role', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ targetUid: uid, newRole })
@@ -127,7 +127,7 @@
             alert(ret.msg);
             loadUserList();
         }
-
+        // 封禁 /api/user/admin/ban
         async function banUser(targetUid) {
             const days = prompt("请输入封禁天数：");
             if (!days || isNaN(Number(days)) || Number(days) <= 0) return;
@@ -140,10 +140,10 @@
             alert(ret.msg);
             loadUserList();
         }
-
+        // 删除用户 /api/user/admin/delete
         async function delUser(uid, uname) {
             if (!confirm(`确定删除用户【${uname}】？文章保留，不可恢复！`)) return;
-            const res = await fetch('/api/user/admin/deleteUser', {
+            const res = await fetch('/api/user/admin/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ targetUid: uid })
@@ -152,12 +152,10 @@
             alert(ret.msg);
             loadUserList();
         }
-
         function escapeHtml(str) {
             if (!str) return '';
             return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
-
         checkAuth();
     </script>
 </body>
