@@ -475,4 +475,3 @@ export async function onRequest({ request, env }) {
     console.error("全局捕获异常：", err);
     return fail(`服务器异常：${err.message}`, 500);
 }
-}
