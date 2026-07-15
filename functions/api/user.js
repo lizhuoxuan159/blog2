@@ -471,7 +471,8 @@ export async function onRequest({ request, env }) {
         }
 
         return fail("无效action参数", 404);
-    } catch (err)
-    console.error("全局捕获异常：", err);
-    return fail(`服务器异常：${err.message}`, 500);
+    } catch (err){
+        console.error("全局捕获异常：", err);
+        return fail(`服务器异常：${err.message}`, 500);
+    }
 }
