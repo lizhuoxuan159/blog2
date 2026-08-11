@@ -14,14 +14,14 @@ function toUTC8Time(utcTime) {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-// ============ 和user.js保持一致的会话校验函数 ============
+// ============ 会话校验函数 ============
 function getSessionCookie(request) {
     const cookieRaw = request.headers.get("cookie") || "";
     const cookieMap = Object.fromEntries(cookieRaw.split("; ").map(item => item.split("=")));
     return cookieMap.sid || null;
 }
 
-// Web Crypto API HMAC-SHA256（CF Pages 原生，零依赖）
+// Web Crypto API HMAC-SHA256
 async function hmacSha256Hex(message, secret) {
     const encoder = new TextEncoder();
     const key = await crypto.subtle.importKey(
@@ -58,6 +58,21 @@ async function getLoginUser(request, secret, db) {
     };
 }
 
+// ===================== hCaptcha 人机验证 =====================
+async function verifyHCaptcha(token, secretKey) {
+    if (!token || !secretKey) return false;
+    const res = await fetch("https://api.hcaptcha.com/siteverify", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+            secret: secretKey,
+            response: token
+        })
+    });
+    const data = await res.json();
+    return data.success === true;
+}
+
 export async function onRequest({ request, env }) {
     try {
         const db = env.DB;
@@ -66,27 +81,26 @@ export async function onRequest({ request, env }) {
         const HMAC_SALT = env.SESSION_HMAC_SECRET;
         const SITE_URL = env.SITE_ORIGIN;
 
-        // 处理OPTIONS跨域预检，解决POST 405
+        // 处理OPTIONS跨域预检
         if (request.method === "OPTIONS") {
             return new Response("", {
                 headers: {
-                    "Access‑Control‑Allow‑Origin": SITE_URL,
-                    "Access‑Control‑Allow‑Methods": "GET,POST,OPTIONS",
-                    "Access‑Control‑Allow‑Headers": "Content‑Type"
+                    "Access-Control-Allow-Origin": SITE_URL,
+                    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type"
                 }
             })
         }
 
         const loginUser = await getLoginUser(request, HMAC_SALT, db);
 
-        // 文章列表 - 未登录/普通用户看所有人已发布；admin/owner看全部（草稿+发布）
+        // 文章列表
         if (request.method === 'GET' && action === 'list') {
             const isAdmin = loginUser && ['admin', 'owner'].includes(loginUser.role);
             let sql = `
         SELECT p.id, p.title, p.content, p.created_at, p.publish_time, p.publish, u.username, u.role, u.is_cancel, p.author_id
         FROM posts p LEFT JOIN users u ON p.author_id = u.id
       `;
-            // 非管理员（游客、writer）仅展示已发布文章，可查看所有人
             if (!isAdmin) {
                 sql += ` WHERE p.publish = 1 `;
             }
@@ -118,7 +132,6 @@ export async function onRequest({ request, env }) {
             if (!row) {
                 return jsonResp({ notFound: true }, 404);
             }
-            // 草稿仅作者/管理员/owner可见；已发布所有人可看
             const isSelf = loginUser && loginUser.uid === row.author_id;
             const isAdmin = loginUser && ['admin', 'owner'].includes(loginUser.role);
             if (row.publish === 0 && !isSelf && !isAdmin) {
@@ -137,7 +150,7 @@ export async function onRequest({ request, env }) {
             });
         }
 
-        // 新建文章（修复 publishingTime 未定义报错）
+        // 新建文章
         if (request.method === 'POST' && action === 'create') {
             if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
             const allowPostRole = ['admin', 'writer', 'owner'];
@@ -192,7 +205,7 @@ export async function onRequest({ request, env }) {
             return jsonResp({ code: 0, msg: '修改成功' });
         }
 
-        // 删除文章 owner可删所有人
+        // 删除文章
         if (request.method === 'POST' && action === 'delete') {
             if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
             const { postId } = await request.json();
@@ -256,9 +269,12 @@ export async function onRequest({ request, env }) {
             const userInfo = await db.prepare(`
         SELECT role, ban_until FROM users WHERE id = ?
       `).bind(loginUser.uid).first();
-            const { postId, content, cfToken } = await request.json();
-            const cfOk = await verifyTurnstile(cfToken, env.TURNSTILE_SECRET);
-            if (!cfOk) return jsonResp({ code: 400, msg: "人机验证失败" });
+            const { postId, content, hCaptchaToken } = await request.json();
+
+            // hCaptcha 验证
+            const hcOk = await verifyHCaptcha(hCaptchaToken, env.HCAPTCHA_SECRET_KEY);
+            if (!hcOk) return jsonResp({ code: 400, msg: "人机验证失败" });
+
             if (userInfo?.ban_until) {
                 const banUntil = new Date(userInfo.ban_until).getTime();
                 if (banUntil > Date.now()) {
@@ -280,7 +296,7 @@ export async function onRequest({ request, env }) {
             return jsonResp({ code: 0, msg: '评论发表成功' });
         }
 
-        // 删除评论 owner可删全部
+        // 删除评论
         if (request.method === 'POST' && action === 'delComment') {
             if (!loginUser) return jsonResp({ code: 99, msg: '请先登录' }, 401);
             const { commentId } = await request.json();

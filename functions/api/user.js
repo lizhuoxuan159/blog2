@@ -145,16 +145,10 @@ async function verifyTOTP(secret32, code) {
     return false;
 }
 
-// ===================== Cloudflare Turnstile CF人机验证 =====================
-/**
- * 校验Turnstile token
- * @param {string} token 前端获取的cf-turnstile-response
- * @param {string} secretKey wrangler环境变量 TURNSTILE_SECRET
- * @returns {Promise<boolean>}
- */
-async function verifyTurnstile(token, secretKey) {
+// ===================== hCaptcha 人机验证 =====================
+async function verifyHCaptcha(token, secretKey) {
     if (!token || !secretKey) return false;
-    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    const res = await fetch("https://api.hcaptcha.com/siteverify", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -165,7 +159,6 @@ async function verifyTurnstile(token, secretKey) {
     const data = await res.json();
     return data.success === true;
 }
-
 
 export async function onRequest({ request, env }) {
     try {
@@ -178,8 +171,7 @@ export async function onRequest({ request, env }) {
         const SECRET = env.SESSION_HMAC_SECRET;
         const ORIGIN = env.SITE_ORIGIN;
 
-        // ===================== 独立OAuth回调（固定路径，禁止带?action） =====================
-        // 微软登录回调（Azure校验redirect_uri必须完全匹配静态路径）
+        // ===================== 独立OAuth回调 =====================
         if (path === "/api/microsoftCallback") {
             const { code } = new URLSearchParams(url.search);
             const tokenRes = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
@@ -194,7 +186,6 @@ export async function onRequest({ request, env }) {
                 })
             });
             const tokenData = await tokenRes.json();
-            // 修复Graph接口版本错误，强制v1.0
             const userRes = await fetch("https://graph.microsoft.com/v1.0/me", {
                 headers: { Authorization: `Bearer ${tokenData.access_token}` }
             });
@@ -216,7 +207,6 @@ export async function onRequest({ request, env }) {
             return redirect;
         }
 
-        // GitHub登录回调（静态路径，OAuth白名单固定）
         if (path === "/api/githubCallback") {
             const { code } = new URLSearchParams(url.search);
             const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
@@ -250,10 +240,10 @@ export async function onRequest({ request, env }) {
             return redirect;
         }
 
-        // ===================== 主接口：/api/user 全部走 action 参数 =====================
+        // ===================== 主接口：/api/user =====================
         if (path !== "/api/user") return fail("接口不存在", 404);
 
-        // OAuth跳转入口（GET，拼接静态回调路径）
+        // OAuth跳转入口
         if (action === "githubLogin") {
             const authUrl = `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(`${ORIGIN}/api/githubCallback`)}`;
             return Response.redirect(authUrl, 302);
@@ -266,9 +256,8 @@ export async function onRequest({ request, env }) {
 
         // 账号密码登录
         if (action === "login" && method === "POST") {
-            const { username, password, totpCode, cfToken } = await request.json();
-            // CF人机验证
-            const cfOk = await verifyTurnstile(cfToken, env.TURNSTILE_SECRET);
+            const { username, password, totpCode, hCaptchaToken } = await request.json();
+            const cfOk = await verifyHCaptcha(hCaptchaToken, env.HCAPTCHA_SECRET_KEY);
             if (!cfOk) return fail("人机验证失败，请完成验证后重试");
             const user = await DB.prepare(`SELECT * FROM users WHERE username = ?`).bind(username).first();
             if (!user) return fail("账号不存在");
@@ -276,7 +265,7 @@ export async function onRequest({ request, env }) {
             if (hashPwd !== user.password) return fail("密码错误");
             if (user.totp_secret && !totpCode) return success({ need2fa: true, uid: user.id }, "请输入6位二次验证码");
             if (user.totp_secret) {
-                const ok = await verifyTOTP(user.totpCode, totpCode);
+                const ok = await verifyTOTP(user.totp_code, totpCode);
                 if (!ok) return fail("验证码错误或过期");
             }
             const sign = await hmacSha256(SECRET, String(user.id));
@@ -290,9 +279,8 @@ export async function onRequest({ request, env }) {
 
         // 注册
         if (action === "register" && method === "POST") {
-            const { username, email, password, cfToken } = await request.json();
-            // CF人机验证
-            const cfOk = await verifyTurnstile(cfToken, env.TURNSTILE_SECRET);
+            const { username, email, password, hCaptchaToken } = await request.json();
+            const cfOk = await verifyHCaptcha(hCaptchaToken, env.HCAPTCHA_SECRET_KEY);
             if (!cfOk) return fail("人机验证失败，请刷新组件重试");
             const exist = await DB.prepare(`SELECT id FROM users WHERE username = ? OR email = ?`).bind(username, email).first();
             if (exist) return fail("用户名/邮箱已注册");
@@ -300,7 +288,6 @@ export async function onRequest({ request, env }) {
             await DB.prepare(`INSERT INTO users (username,email,password,role,totp_secret) VALUES (?,?,?,0,null)`).bind(username, email, hash).run();
             return success(null, "注册完成");
         }
-
 
         // 退出登录
         if (action === "logout") {
@@ -324,9 +311,8 @@ export async function onRequest({ request, env }) {
         }
 
         if (action === "sendCode" && method === "POST") {
-            const { email, type, cfToken } = await request.json();
-            // CF人机验证
-            const cfOk = await verifyTurnstile(cfToken, env.TURNSTILE_SECRET);
+            const { email, type, hCaptchaToken } = await request.json();
+            const cfOk = await verifyHCaptcha(hCaptchaToken, env.HCAPTCHA_SECRET_KEY);
             if (!cfOk) return fail("人机验证失败");
             const user = await DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first();
             if (!user) return fail("邮箱未注册");
@@ -337,7 +323,6 @@ export async function onRequest({ request, env }) {
             await sendEmail(env.RESEND_API_KEY, email, "密码重置", `<a href="${resetUrl}">重置链接</a>`);
             return success(null, "邮件已发送");
         }
-
 
         // 重置密码
         if (action === "resetPwd" && method === "POST") {
@@ -453,7 +438,7 @@ export async function onRequest({ request, env }) {
 
         // 2FA解绑
         if (action === "totpUnbind" && method === "POST") {
-            const u = await getLoginUser(request, SECRET);
+            const u = await getLoginUser(request, SECRET, DB);
             if (!u) return fail("未登录", 401);
             if (!u.totp_secret) return fail("未开启");
             const { password } = await request.json();
@@ -471,7 +456,7 @@ export async function onRequest({ request, env }) {
         }
 
         return fail("无效action参数", 404);
-    } catch (err){
+    } catch (err) {
         console.error("全局捕获异常：", err);
         return fail(`服务器异常：${err.message}`, 500);
     }

@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录</title>
     <link rel="stylesheet" href="/css/style.css">
-    <!-- CF Turnstile JS -->
-    <script src="https://challenges.cloudflare.com/turnstile/v0/sitekey.js" defer></script>
+    <!-- hCaptcha JS -->
+    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
 </head>
 <body>
     <div class="container">
@@ -20,8 +20,8 @@
             <input type="password" id="password" placeholder="密码">
             <input type="text" id="totpCode" placeholder="两步验证6位验证码(未开启留空)">
 
-            <!-- Turnstile组件，填入你的sitekey -->
-            <div class="cf-turnstile" data-sitekey="0x4AAAAAAACqx_2fZzYHAdKA2"></div>
+            <!-- hCaptcha 组件 -->
+            <div class="h-captcha" data-sitekey="你的hCaptcha站点密钥"></div>
 
             <button class="glass-btn" style="width:100%" onclick="doLogin()" id="loginBtn">登录</button>
             <a href="/api/user?action=githubLogin">
@@ -41,13 +41,14 @@
             const password = document.getElementById("password").value.trim();
             const totpCode = document.getElementById("totpCode").value.trim();
             const loginBtn = document.getElementById("loginBtn");
-            // 获取CF验证结果
-            let cfToken = turnstile.getResponse();
+
+            // 获取 hCaptcha 响应
+            let hCaptchaToken = hcaptcha.getResponse();
             if (!username || !password) {
                 alert("请填写用户名和密码");
                 return;
             }
-            if (!cfToken) {
+            if (!hCaptchaToken) {
                 alert("请先完成人机验证");
                 return;
             }
@@ -59,7 +60,7 @@
                     headers: {
                         "Content-Type": "application/json; charset=utf-8"
                     },
-                    body: JSON.stringify({ username, password, totpCode, cfToken })
+                    body: JSON.stringify({ username, password, totpCode, hCaptchaToken })
                 });
                 const data = await res.json();
                 if (data.code === 0) {
@@ -71,8 +72,7 @@
                     alert("该账号开启两步验证，请填写6位验证码后重试");
                 } else {
                     alert(data.msg);
-                    // 验证失败重置组件
-                    turnstile.reset();
+                    hcaptcha.reset();
                 }
             } catch (err) {
                 alert("接口请求异常，请检查网络或者部署状态");
@@ -87,22 +87,22 @@
         async function openForgetPwd() {
             const email = prompt("输入你的注册邮箱");
             if (!email) return;
-            let cfToken = turnstile.getResponse();
-            if (!cfToken) {
-                alert("回到页面下方完成人机验证");
+            let hCaptchaToken = hcaptcha.getResponse();
+            if (!hCaptchaToken) {
+                alert("请先完成页面下方的人机验证");
                 return;
             }
             const res = await fetch("/api/user?action=sendCode", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, type: "resetpwd", cfToken })
+                body: JSON.stringify({ email, type: "resetpwd", hCaptchaToken })
             });
             const json = await res.json();
             alert(json.msg);
             if (json.code === 0) {
                 location.href = `/reset.html?email=${email}`;
             } else {
-                turnstile.reset();
+                hcaptcha.reset();
             }
         }
     </script>

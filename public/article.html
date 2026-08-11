@@ -1,61 +1,77 @@
-﻿<!DOCTYPE html>
+﻿﻿
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<link rel="icon" href="/favicon.ico" type="image/x-icon">
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>文章详情</title>
-  <link rel="stylesheet" href="/css/style.css">
-  <style>
-    .comment-item{
-      margin:12px 0;
-      padding:12px;
-      border:1px solid rgba(255,255,255,0.2);
-      border-radius:8px;
-    }
-    .cm-del-btn{
-      margin-left:10px;
-      background:rgba(255,80,80,0.2);
-    }
-    .edit-modal{
-      position:fixed;
-      top:0;left:0;right:0;bottom:0;
-      background:rgba(0,0,0,0.5);
-      display:flex;align-items:center;justify-content:center;
-      z-index:9999;
-      display:none;
-    }
-    .edit-box{
-      background:#222;
-      padding:20px;
-      border-radius:10px;
-      width:90%;
-      max-width:500px;
-    }
-    .edit-box input,.edit-box textarea{
-      width:100%;
-      padding:8px;
-      margin:6px 0;
-      border-radius:6px;
-      background:rgba(255,255,255,0.1);
-      color:#fff;
-      border:1px solid #ccc;
-    }
-    .author-name {
-      cursor: pointer;
-      color: #667eea;
-    }
-    .author-name:hover {
-      text-decoration: underline;
-    }
-    .comment-user {
-      cursor: pointer;
-      color: #667eea;
-    }
-    .comment-user:hover {
-      text-decoration: underline;
-    }
-  </style>
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文章详情</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <!-- hCaptcha JS -->
+    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    <style>
+        .comment-item {
+            margin: 12px 0;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+        }
+
+        .cm-del-btn {
+            margin-left: 10px;
+            background: rgba(255,80,80,0.2);
+        }
+
+        .edit-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            display: none;
+        }
+
+        .edit-box {
+            background: #222;
+            padding: 20px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+        }
+
+            .edit-box input, .edit-box textarea {
+                width: 100%;
+                padding: 8px;
+                margin: 6px 0;
+                border-radius: 6px;
+                background: rgba(255,255,255,0.1);
+                color: #fff;
+                border: 1px solid #ccc;
+            }
+
+        .author-name {
+            cursor: pointer;
+            color: #667eea;
+        }
+
+            .author-name:hover {
+                text-decoration: underline;
+            }
+
+        .comment-user {
+            cursor: pointer;
+            color: #667eea;
+        }
+
+            .comment-user:hover {
+                text-decoration: underline;
+            }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -83,13 +99,12 @@
             </div>
         </div>
         <!-- 评论区域 -->
-        <div class="cf-turnstile" data-sitekey="0x4AAAAAAACqx_2fZzYHAdKA2"></div>
-<textarea id="commentContent" placeholder="写下你的评论"></textarea>
-        <button onclick="submitComment()">提交评论</button>
         <div class="glass" style="max-width:600px;margin:30px auto">
             <h3>评论区</h3>
             <div id="cmInputArea" style="margin:15px 0;">
                 <textarea id="cmContent" style="width:100%;min-height:80px;padding:8px;border-radius:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;" placeholder="输入评论内容..."></textarea>
+                <!-- hCaptcha 组件 -->
+                <div class="h-captcha" data-sitekey="你的hCaptcha站点密钥" style="margin:10px 0;"></div>
                 <div style="margin-top:8px;text-align:right">
                     <button class="glass-btn" onclick="submitComment()">发表评论</button>
                 </div>
@@ -98,207 +113,211 @@
             <div id="commentList"></div>
         </div>
     </div>
-<script>
-let postId = new URLSearchParams(location.search).get('id');
-let currentLoginUid = null;
-let currentLoginRole = null;
-let postAuthorId = null;
-let postAuthorName = '';
-let currentTitle = '';
-let currentContent = '';
+    <script>
+        let postId = new URLSearchParams(location.search).get('id');
+        let currentLoginUid = null;
+        let currentLoginRole = null;
+        let postAuthorId = null;
+        let postAuthorName = '';
+        let currentTitle = '';
+        let currentContent = '';
 
-function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace( />/g,'&gt;');
-}
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
 
-// 跳转到私信
-function goPrivate(userId, userName) {
-  if (!currentLoginUid) {
-    alert('请先登录');
-    return;
-  }
-  if (userId === currentLoginUid) {
-    alert('不能给自己发私信哦');
-    return;
-  }
-  location.href = `/private.html?userId=${userId}&userName=${encodeURIComponent(userName)}`;
-}
+        // 跳转到私信
+        function goPrivate(userId, userName) {
+            if (!currentLoginUid) {
+                alert('请先登录');
+                return;
+            }
+            if (userId === currentLoginUid) {
+                alert('不能给自己发私信哦');
+                return;
+            }
+            location.href = `/private.html?userId=${userId}&userName=${encodeURIComponent(userName)}`;
+        }
 
-async function checkLoginState(){
-  const res = await fetch('/api/user?action=check');
-  const data = await res.json();
-  if(data.login){
-    currentLoginUid = data.uid;
-    currentLoginRole = data.role;
-  }
-  refreshCommentInputTip();
-}
+        async function checkLoginState() {
+            const res = await fetch('/api/user?action=check');
+            const data = await res.json();
+            if (data.data?.login) {
+                currentLoginUid = data.data.uid;
+                currentLoginRole = data.data.role;
+            }
+            refreshCommentInputTip();
+        }
 
-function refreshCommentInputTip(){
-  const inputWrap = document.getElementById('cmInputArea');
-  const tip = document.getElementById('cmTip');
-  if(!currentLoginUid){
-    inputWrap.style.display = 'none';
-    tip.innerText = '登录后才可以发表评论';
-    tip.style.display = 'block';
-  }else if(currentLoginRole === 'banned'){
-    inputWrap.style.display = 'none';
-    tip.innerText = '封禁账号无法发表评论';
-    tip.style.display = 'block';
-  }else{
-    inputWrap.style.display = 'block';
-    tip.style.display = 'none';
-  }
-}
+        function refreshCommentInputTip() {
+            const inputWrap = document.getElementById('cmInputArea');
+            const tip = document.getElementById('cmTip');
+            if (!currentLoginUid) {
+                inputWrap.style.display = 'none';
+                tip.innerText = '登录后才可以发表评论';
+                tip.style.display = 'block';
+            } else if (currentLoginRole === 'banned') {
+                inputWrap.style.display = 'none';
+                tip.innerText = '封禁账号无法发表评论';
+                tip.style.display = 'block';
+            } else {
+                inputWrap.style.display = 'block';
+                tip.style.display = 'none';
+            }
+        }
 
-async function loadDetail(){
-  const res = await fetch(`/api/post?action=detail&id=${postId}`);
-  const data = await res.json();
-  if(data?.notFound === true){
-    location.href = `/error.html?code=404&msg=该文章不存在或已被删除`;
-    return;
-  }
-  if(!data){
-    location.href = `/error.html?code=404&msg=该文章不存在或已被删除`;
-    return;
-  }
-  postAuthorId = data.author_id;
-  postAuthorName = data.displayAuthor;
-  currentTitle = data.title;
-  currentContent = data.content;
-  let authorName = data.displayAuthor;
-  
-  document.getElementById('postTitle').innerText = data.title;
-  document.getElementById('postInfo').innerHTML = 
-    `作者：<span class="author-name" onclick="goPrivate(${data.author_id}, '${escapeHtml(authorName)}')" title="点击发私信">${escapeHtml(authorName)}</span> | ${data.created_at}`;
-  document.getElementById('postContent').innerText = data.content;
-  
-  await checkLoginState();
-  
-  const delBtn = document.getElementById('delPostBtn');
-  const editBtn = document.getElementById('editPostBtn');
-  // owner / admin / 文章作者 显示编辑删除按钮
-  const canManage = currentLoginRole === 'owner' || currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId);
-  if(canManage){
-    editBtn.style.display = 'inline-block';
-    delBtn.style.display = 'inline-block';
-  }
-  loadCommentList();
-}
+        async function loadDetail() {
+            const res = await fetch(`/api/post?action=detail&id=${postId}`);
+            const data = await res.json();
+            if (data?.notFound === true) {
+                location.href = `/error.html?code=404&msg=该文章不存在或已被删除`;
+                return;
+            }
+            if (!data) {
+                location.href = `/error.html?code=404&msg=该文章不存在或已被删除`;
+                return;
+            }
+            postAuthorId = data.author_id;
+            postAuthorName = data.displayAuthor;
+            currentTitle = data.title;
+            currentContent = data.content;
+            let authorName = data.displayAuthor;
 
-// 打开编辑框
-function openEdit(){
-  document.getElementById('editTitle').value = currentTitle;
-  document.getElementById('editContent').value = currentContent;
-  document.getElementById('editModal').style.display = 'flex';
-}
-// 关闭编辑
-function closeEdit(){
-  document.getElementById('editModal').style.display = 'none';
-}
-// 保存编辑
-async function saveEdit(){
-  const title = document.getElementById('editTitle').value.trim();
-  const content = document.getElementById('editContent').value.trim();
-  if(!title || !content){
-    alert('标题和内容不能为空');
-    return;
-  }
-  const res = await fetch('/api/post?action=edit',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ postId, title, content })
-  });
-  const ret = await res.json();
-  alert(ret.msg);
-  if(ret.code === 0){
-    closeEdit();
-    loadDetail();
-  }
-}
+            document.getElementById('postTitle').innerText = data.title;
+            document.getElementById('postInfo').innerHTML =
+                `作者：<span class="author-name" onclick="goPrivate(${data.author_id}, '${escapeHtml(authorName)}')" title="点击发私信">${escapeHtml(authorName)}</span> | ${data.created_at}`;
+            document.getElementById('postContent').innerText = data.content;
 
-async function deleteArticle(){
-  if(!confirm('确定删除这篇文章？删除后不可恢复！')) return;
-  const res = await fetch('/api/post?action=delete',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({postId:postId})
-  });
-  const ret = await res.json();
-  alert(ret.msg);
-  location.href='/index.html';
-}
+            await checkLoginState();
 
-async function loadCommentList(){
-  const res = await fetch(`/api/post?action=getComment&postId=${postId}`);
-  const cmList = await res.json();
-  const wrap = document.getElementById('commentList');
-  if(cmList.length === 0){
-    wrap.innerHTML = '<p style="opacity:0.7">暂无评论</p>';
-    return;
-  }
-  let html = '';
-  cmList.forEach(cm=>{
-    let showDelBtn = false;
-    // 修复：owner和admin都能删除全部评论，本人删自己评论
-    if(['admin','owner'].includes(currentLoginRole) || (currentLoginUid && currentLoginUid === cm.userId)){
-      showDelBtn = true;
-    }
-    html += `
-    <div class="comment-item">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span>
-          <span class="comment-user" onclick="goPrivate(${cm.userId}, '${escapeHtml(cm.userName)}')" title="点击发私信">${escapeHtml(cm.userName)}</span>
-          · ${cm.createTime}
-        </span>
-        ${showDelBtn ? `<button class="glass-btn cm-del-btn" onclick="delComment(${cm.id})">删除</button>` : ''}
-      </div>
-      <p style="margin:8px 0;white-space:pre-wrap">${escapeHtml(cm.content)}</p>
-    </div>
-    `
-  })
-  wrap.innerHTML = html;
-}
+            const delBtn = document.getElementById('delPostBtn');
+            const editBtn = document.getElementById('editPostBtn');
+            // owner / admin / 文章作者 显示编辑删除按钮
+            const canManage = currentLoginRole === 'owner' || currentLoginRole === 'admin' || (currentLoginUid && currentLoginUid === postAuthorId);
+            if (canManage) {
+                editBtn.style.display = 'inline-block';
+                delBtn.style.display = 'inline-block';
+            }
+            loadCommentList();
+        }
 
-async function submitComment(){
-  const content = document.getElementById('cmContent').value.trim();
-  if(!content){
-    alert('评论内容不能为空');
-    return;
-    }
-   const cfToken = turnstile.getResponse();
-   if (!content) return alert("评论不能为空");
-   if (!cfToken) return alert("请完成人机验证");
-  const res = await fetch('/api/post?action=addComment',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({postId, content})
-  })
-  const ret = await res.json();
-  if(ret.code === 0){
-    document.getElementById('cmContent').value = '';
-    loadCommentList();
-  }else{
-    alert(ret.msg);
-  }
-}
+        // 打开编辑框
+        function openEdit() {
+            document.getElementById('editTitle').value = currentTitle;
+            document.getElementById('editContent').value = currentContent;
+            document.getElementById('editModal').style.display = 'flex';
+        }
+        // 关闭编辑
+        function closeEdit() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+        // 保存编辑
+        async function saveEdit() {
+            const title = document.getElementById('editTitle').value.trim();
+            const content = document.getElementById('editContent').value.trim();
+            if (!title || !content) {
+                alert('标题和内容不能为空');
+                return;
+            }
+            const res = await fetch('/api/post?action=edit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ postId, title, content })
+            });
+            const ret = await res.json();
+            alert(ret.msg);
+            if (ret.code === 0) {
+                closeEdit();
+                loadDetail();
+            }
+        }
 
-async function delComment(cmId){
-  if(!confirm('确定删除这条评论？')) return;
-  const res = await fetch('/api/post?action=delComment',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({commentId: cmId})
-  })
-  const ret = await res.json();
-  alert(ret.msg);
-  loadCommentList();
-}
+        async function deleteArticle() {
+            if (!confirm('确定删除这篇文章？删除后不可恢复！')) return;
+            const res = await fetch('/api/post?action=delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ postId: postId })
+            });
+            const ret = await res.json();
+            alert(ret.msg);
+            location.href = '/index.html';
+        }
 
-// 绑定编辑按钮
-document.getElementById('editPostBtn').onclick = openEdit;
-loadDetail();
-</script>
+        async function loadCommentList() {
+            const res = await fetch(`/api/post?action=getComment&postId=${postId}`);
+            const cmList = await res.json();
+            const wrap = document.getElementById('commentList');
+            if (cmList.length === 0) {
+                wrap.innerHTML = '<p style="opacity:0.7">暂无评论</p>';
+                return;
+            }
+            let html = '';
+            cmList.forEach(cm => {
+                let showDelBtn = false;
+                if (['admin', 'owner'].includes(currentLoginRole) || (currentLoginUid && currentLoginUid === cm.userId)) {
+                    showDelBtn = true;
+                }
+                html += `
+        <div class="comment-item">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span>
+              <span class="comment-user" onclick="goPrivate(${cm.userId}, '${escapeHtml(cm.userName)}')" title="点击发私信">${escapeHtml(cm.userName)}</span>
+              · ${cm.createTime}
+            </span>
+            ${showDelBtn ? `<button class="glass-btn cm-del-btn" onclick="delComment(${cm.id})">删除</button>` : ''}
+          </div>
+          <p style="margin:8px 0;white-space:pre-wrap">${escapeHtml(cm.content)}</p>
+        </div>
+        `
+            })
+            wrap.innerHTML = html;
+        }
+
+        async function submitComment() {
+            const content = document.getElementById('cmContent').value.trim();
+            if (!content) {
+                alert('评论内容不能为空');
+                return;
+            }
+            // 获取 hCaptcha 响应
+            const hCaptchaToken = hcaptcha.getResponse();
+            if (!hCaptchaToken) {
+                alert('请完成人机验证');
+                return;
+            }
+            const res = await fetch('/api/post?action=addComment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ postId, content, hCaptchaToken })
+            });
+            const ret = await res.json();
+            if (ret.code === 0) {
+                document.getElementById('cmContent').value = '';
+                hcaptcha.reset(); // 重置验证码
+                loadCommentList();
+            } else {
+                alert(ret.msg);
+                hcaptcha.reset();
+            }
+        }
+
+        async function delComment(cmId) {
+            if (!confirm('确定删除这条评论？')) return;
+            const res = await fetch('/api/post?action=delComment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ commentId: cmId })
+            });
+            const ret = await res.json();
+            alert(ret.msg);
+            loadCommentList();
+        }
+
+        // 绑定编辑按钮
+        document.getElementById('editPostBtn').onclick = openEdit;
+        loadDetail();
+    </script>
 </body>
 </html>
