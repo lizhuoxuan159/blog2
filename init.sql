@@ -12,15 +12,15 @@ CREATE TABLE IF NOT EXISTS users (
   password     TEXT NOT NULL,                -- HMAC-SHA256 散列
   role         TEXT NOT NULL DEFAULT 'guest',-- owner / admin / writer / guest / banned
   ban_until    TEXT,                         -- 禁言截止时间（ISO 字符串），NULL 表示未禁言
-  microsoft_id TEXT,                         -- 微软 OAuth 绑定
   github_id    TEXT,                         -- GitHub OAuth 绑定
+  codeforces_id TEXT,                        -- Codeforces OAuth 绑定（handle）
   totp_secret  TEXT,                         -- 2FA 密钥（Base32），NULL 表示未开启
   is_cancel    INTEGER NOT NULL DEFAULT 0,   -- 1 = 账号已注销
   created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_ms    ON users(microsoft_id);
 CREATE INDEX IF NOT EXISTS idx_users_gh    ON users(github_id);
+CREATE INDEX IF NOT EXISTS idx_users_cf    ON users(codeforces_id);
 
 -- ---------- 文章表 ----------
 CREATE TABLE IF NOT EXISTS posts (

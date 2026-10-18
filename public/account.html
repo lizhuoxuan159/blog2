@@ -17,7 +17,7 @@
             <h2>个人信息</h2>
             <p>用户名：<span id="showUsername"></span></p>
             <p>角色：<span id="showRole"></span></p>
-            <p>微软绑定状态：<span id="msBindTip"></span> <button id="unbindMsBtn" style="display:none" onclick="unbindMicrosoft()">解绑微软账号</button></p>
+            <p>Codeforces绑定状态：<span id="cfBindTip"></span> <button id="unbindCfBtn" style="display:none" onclick="unbindCodeforces()">解绑Codeforces账号</button></p>
             <p>GitHub绑定状态：<span id="ghBindTip"></span> <button id="unbindGhBtn" style="display:none" onclick="unbindGithub()">解绑GitHub账号</button></p>
             <hr>
             <h3>两步验证(2FA)</h3>
@@ -57,12 +57,12 @@
             loginData = data.data;
             document.getElementById('showUsername').innerText = loginData.username;
             document.getElementById('showRole').innerText = loginData.role;
-            // 微软绑定
-            if (loginData.microsoft_id) {
-                document.getElementById('msBindTip').innerText = "已绑定";
-                document.getElementById('unbindMsBtn').style.display = "inline-block";
+            // Codeforces绑定
+            if (loginData.codeforces_id) {
+                document.getElementById('cfBindTip').innerText = "已绑定";
+                document.getElementById('unbindCfBtn').style.display = "inline-block";
             } else {
-                document.getElementById('msBindTip').innerText = "未绑定";
+                document.getElementById('cfBindTip').innerText = "未绑定";
             }
             // GitHub绑定
             if (loginData.github_id) {
@@ -108,10 +108,10 @@
             }
             btn.disabled = false;
         }
-        // 解绑微软
-        async function unbindMicrosoft() {
-            if (!confirm("确定解绑Microsoft登录账号？解绑后只能用户名密码登录")) return;
-            const res = await fetch('/api/user?action=unbindMs', {
+        // 解绑Codeforces
+        async function unbindCodeforces() {
+            if (!confirm("确定解绑Codeforces登录账号？解绑后只能用户名密码登录")) return;
+            const res = await fetch('/api/user?action=unbindCf', {
                 method: "POST",
                 headers: { "Content-Type": "application/json" }
             })

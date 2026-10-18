@@ -28,8 +28,8 @@ const TABLES = [
   password     TEXT NOT NULL,
   role         TEXT NOT NULL DEFAULT 'guest',
   ban_until    TEXT,
-  microsoft_id TEXT,
   github_id    TEXT,
+  codeforces_id TEXT,
   totp_secret  TEXT,
   is_cancel    INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL DEFAULT (datetime('now'))
@@ -107,7 +107,6 @@ const TABLES = [
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
   `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
-  `CREATE INDEX IF NOT EXISTS idx_users_ms ON users(microsoft_id)`,
   `CREATE INDEX IF NOT EXISTS idx_users_gh ON users(github_id)`,
   `CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id)`,
   `CREATE INDEX IF NOT EXISTS idx_posts_pub ON posts(publish, publish_time)`,
@@ -172,6 +171,23 @@ async function hasOwner(DB) {
   }
 }
 
+// 轻量迁移：为旧库补齐新增列（幂等，已存在则跳过）
+async function migrateColumns(DB) {
+  const wanted = ["codeforces_id"];
+  let cols = [];
+  try {
+    const info = await DB.prepare(`PRAGMA table_info(users)`).all();
+    cols = (info?.results || []).map(r => r.name);
+  } catch (e) {
+    return; // users 表不存在，建表流程会创建
+  }
+  for (const col of wanted) {
+    if (!cols.includes(col)) {
+      await DB.prepare(`ALTER TABLE users ADD COLUMN ${col} TEXT`).run();
+    }
+  }
+}
+
 export async function onRequest({ request, env }) {
   try {
     if (request.method === "OPTIONS") return handleOptions();
@@ -218,24 +234,30 @@ export async function onRequest({ request, env }) {
       }
     }
 
-    // 1) 建表（幂等，已存在的表自动跳过）
+    // 1) 建表（幂等，已存在的表自动跳过）+ 旧库列迁移
     let created = 0;
     for (const sql of TABLES) {
       await DB.prepare(sql).run();
       created++;
     }
+    await migrateColumns(DB);
 
     // 2) 创建站长账号 或 重置站长密码
+    //    优先使用数据库中已有的 owner（已初始化场景），
+    //    仅未初始化时才使用传入的 adminname 创建新站长
     const hash = await secureHashPassword(adminpassword, SECRET);
     if (ownerExists) {
+      const owner = await DB.prepare(`SELECT username FROM users WHERE role = 'owner' ORDER BY id LIMIT 1`).first();
       const res = await DB.prepare(`
-        UPDATE users SET password = ? WHERE username = ? AND role = 'owner'
-      `).bind(hash, adminname).run();
+        UPDATE users SET password = ? WHERE role = 'owner' AND id = (
+          SELECT id FROM users WHERE role = 'owner' ORDER BY id LIMIT 1
+        )
+      `).bind(hash).run();
       const changed = res?.meta?.changes ?? 0;
       if (!changed) {
-        return fail(`未找到站长为 ${adminname} 的用户，密码未重置`, 404);
+        return fail("未能重置站长密码，请重试", 500);
       }
-      return success({ adminname, tablesEnsured: created }, "站长密码已重置");
+      return success({ adminname: owner?.username || null, tablesEnsured: created }, "站长密码已重置");
     }
 
     await DB.prepare(`

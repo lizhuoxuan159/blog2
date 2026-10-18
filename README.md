@@ -45,14 +45,26 @@ Pages 项目 → 设置 → 连接 Git 仓库，构建输出目录选 `public`�
 |------|------|--------|
 | `SESSION_HMAC_SECRET` | 会话签名密钥（**必改**，勿用默认值） | secret |
 | `INIT_SECRET` | 初始化接口重置密码口令（可选，配置后 `/api/init/` 才允许重置已初始化的站长密码） | secret |
-| `MS_CLIENT_SECRET` | 微软 OAuth 客户端密钥 | secret |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth 客户端密钥 | secret |
+| `CF_CLIENT_SECRET` | Codeforces OAuth 客户端密钥 | secret |
 | `HCAPTCHA_SECRET_KEY` | hCaptcha 服务端密钥（不配置则跳过人机验证） | secret |
 | `RESEND_API_KEY` | Resend 邮件服务密钥（不配置则邮件功能不可用） | secret |
-| `MS_CLIENT_ID` / `GITHUB_CLIENT_ID` | OAuth 客户端 ID | 普通 |
+| `GITHUB_CLIENT_ID` / `CF_CLIENT_ID` | OAuth 客户端 ID | 普通 |
 | `SITE_ORIGIN` | 站点完整地址（OAuth 回调用） | 普通 |
 
 D1 数据库绑定名 `DB` 已在 wrangler.toml 中配置；新环境可用 `init.sql` 初始化表结构。
+
+## 第三方登录（OAuth）
+
+| 平台 | 授权端点 | 回调地址（需在对应平台填写） |
+|------|----------|------------------------------|
+| GitHub | `https://github.com/login/oauth/authorize` | `https://<你的域名>/api/githubCallback` |
+| Codeforces | `https://codeforces.com/oauth/authorize` | `https://<你的域名>/api/codeforcesCallback` |
+
+- GitHub OAuth App：<https://github.com/settings/developers>，Authorization callback URL 填上表地址
+- Codeforces OAuth 应用：登录 Codeforces 后打开 <https://codeforces.com/settings/api>，
+  创建应用时 API key/secret 即为 `CF_CLIENT_ID` / `CF_CLIENT_SECRET`，Redirect URI 填上表地址
+- 登录成功后自动以平台账号创建站内用户（`gh_*` / `cf_*` 前缀），无需额外绑定流程
 
 ## 管理员初始化（`/api/init/`）
 
