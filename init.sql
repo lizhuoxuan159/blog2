@@ -137,7 +137,6 @@ CREATE INDEX IF NOT EXISTS idx_pm_sender   ON private_messages(sender_id, receiv
 CREATE INDEX IF NOT EXISTS idx_pm_receiver ON private_messages(receiver_id, is_read);
 
 -- ---------- 初始站长账号 ----------
--- 默认密码 admin123，登录后请立即修改！
--- 密码散列值由 SESSION_HMAC_SECRET 作为密钥计算，首次部署后建议改密。
-INSERT OR IGNORE INTO users (username, email, password, role)
-VALUES ('admin', 'admin@example.com', 'PLACEHOLDER_RESET_VIA_APP', 'owner');
+-- 不再内置占位账号。部署后请调用初始化接口创建站长：
+--   POST /api/init/  { "adminname": "admin", "adminpassword": "你的密码" }
+-- 接口会幂等建表并创建 owner 账号；已初始化后需携带 INIT_SECRET 才可重置密码。

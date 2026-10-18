@@ -44,6 +44,7 @@ Pages 项目 → 设置 → 连接 Git 仓库，构建输出目录选 `public`�
 | 名称 | 用途 | 敏感度 |
 |------|------|--------|
 | `SESSION_HMAC_SECRET` | 会话签名密钥（**必改**，勿用默认值） | secret |
+| `INIT_SECRET` | 初始化接口重置密码口令（可选，配置后 `/api/init/` 才允许重置已初始化的站长密码） | secret |
 | `MS_CLIENT_SECRET` | 微软 OAuth 客户端密钥 | secret |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth 客户端密钥 | secret |
 | `HCAPTCHA_SECRET_KEY` | hCaptcha 服务端密钥（不配置则跳过人机验证） | secret |
@@ -52,6 +53,23 @@ Pages 项目 → 设置 → 连接 Git 仓库，构建输出目录选 `public`�
 | `SITE_ORIGIN` | 站点完整地址（OAuth 回调用） | 普通 |
 
 D1 数据库绑定名 `DB` 已在 wrangler.toml 中配置；新环境可用 `init.sql` 初始化表结构。
+
+## 管理员初始化（`/api/init/`）
+
+部署后首先调用初始化接口创建站长账号（接口会自动幂等建表）：
+
+```bash
+curl -X POST https://<你的域名>/api/init/ \
+  -H "Content-Type: application/json" \
+  -d '{"adminname":"admin","adminpassword":"your_password"}'
+```
+
+- `adminname`：仅限字母/数字/`_`/`-`，长度 2-32
+- `adminpassword`：长度至少 6 位
+- `GET /api/init/` 可查询当前初始化状态
+- 安全策略：数据库中**不存在 owner 时**允许自助初始化；已初始化后拒绝执行，
+  需额外携带 `initSecret`（对应环境变量 `INIT_SECRET`，用 `wrangler secret put` 配置）
+  才可重置站长密码
 
 ## 人机验证（hCaptcha）
 
