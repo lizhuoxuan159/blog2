@@ -49,7 +49,7 @@ function toUTC8Time(utcTime) {
     const date = new Date(utcTime);
     date.setHours(date.getHours() + 8);
     const pad = n => n.toString().padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth())}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function getSessionCookie(request) {
@@ -146,8 +146,14 @@ async function verifyTOTP(secret32, code) {
 }
 
 // ===================== hCaptcha 人机验证 =====================
+// 注意：未配置 HCAPTCHA_SECRET_KEY 时跳过验证（降级），
+// 配置后自动启用。生产环境务必配置该 secret。
 async function verifyHCaptcha(token, secretKey) {
-    if (!token || !secretKey) return false;
+    if (!secretKey) {
+        console.warn("未配置 HCAPTCHA_SECRET_KEY，跳过人机验证");
+        return true;
+    }
+    if (!token) return false;
     const res = await fetch("https://api.hcaptcha.com/siteverify", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -186,12 +192,18 @@ export async function onRequest({ request, env }) {
                 })
             });
             const tokenData = await tokenRes.json();
+            if (!tokenData?.access_token) {
+                return fail("微软登录授权失败，请重试", 401);
+            }
             const userRes = await fetch("https://graph.microsoft.com/v1.0/me", {
                 headers: { Authorization: `Bearer ${tokenData.access_token}` }
             });
             const msUser = await userRes.json();
-            const msId = msUser.id;
-            const email = msUser.mail || msUser.userPrincipalName;
+            const msId = msUser?.id;
+            if (!msId) {
+                return fail("无法获取微软账号信息，请重试", 401);
+            }
+            const email = msUser.mail || msUser.userPrincipalName || `${msId}@microsoft.local`;
             let dbUser = await DB.prepare(`SELECT * FROM users WHERE microsoft_id = ?`).bind(msId).first();
             if (!dbUser) {
                 const randPwd = Math.random().toString(36).slice(2);
@@ -219,11 +231,17 @@ export async function onRequest({ request, env }) {
                 })
             });
             const tokenData = await tokenRes.json();
+            if (!tokenData?.access_token) {
+                return fail("GitHub登录授权失败，请重试", 401);
+            }
             const userRes = await fetch("https://api.github.com/user", {
                 headers: { Authorization: `token ${tokenData.access_token}` }
             });
             const ghUser = await userRes.json();
-            const ghId = String(ghUser.id);
+            const ghId = ghUser?.id ? String(ghUser.id) : null;
+            if (!ghId) {
+                return fail("无法获取GitHub账号信息，请重试", 401);
+            }
             const email = ghUser.email || `${ghUser.login}@github.local`;
             let dbUser = await DB.prepare(`SELECT * FROM users WHERE github_id = ?`).bind(ghId).first();
             if (!dbUser) {
@@ -265,13 +283,17 @@ export async function onRequest({ request, env }) {
             if (hashPwd !== user.password) return fail("密码错误");
             if (user.totp_secret && !totpCode) return success({ need2fa: true, uid: user.id }, "请输入6位二次验证码");
             if (user.totp_secret) {
-                const ok = await verifyTOTP(user.totp_code, totpCode);
+                const ok = await verifyTOTP(user.totp_secret, totpCode);
                 if (!ok) return fail("验证码错误或过期");
             }
             const sign = await hmacSha256(SECRET, String(user.id));
             const sid = `${user.id}.${sign}`;
             const ip = request.headers.get("cf-connecting-ip") || "未知IP";
-            await sendEmail(env.RESEND_API_KEY, user.email, "账号登录提醒", `<p>登录IP：${ip}</p>`);
+            try {
+                await sendEmail(env.RESEND_API_KEY, user.email, "账号登录提醒", `<p>登录IP：${ip}</p>`);
+            } catch (mailErr) {
+                console.error("登录提醒邮件发送失败（不影响登录）：", mailErr);
+            }
             const res = success({ uid: user.id, username: user.username, role: user.role }, "登录成功");
             res.headers.set("Set-Cookie", `sid=${sid}; Path=/; HttpOnly; SameSite=Lax`);
             return res;
@@ -279,13 +301,19 @@ export async function onRequest({ request, env }) {
 
         // 注册
         if (action === "register" && method === "POST") {
-            const { username, email, password, hCaptchaToken } = await request.json();
+            const { username, email, password, emailCode, hCaptchaToken } = await request.json();
             const cfOk = await verifyHCaptcha(hCaptchaToken, env.HCAPTCHA_SECRET_KEY);
             if (!cfOk) return fail("人机验证失败，请刷新组件重试");
+            if (!emailCode) return fail("请输入邮箱验证码");
+            const codeRec = await DB.prepare(`
+        SELECT id, uid FROM email_verifications WHERE code = ? AND action = 'register' AND expire_at > ?
+      `).bind(String(emailCode).trim(), new Date().toISOString()).first();
+            if (!codeRec) return fail("邮箱验证码错误或已过期，请重新获取");
             const exist = await DB.prepare(`SELECT id FROM users WHERE username = ? OR email = ?`).bind(username, email).first();
             if (exist) return fail("用户名/邮箱已注册");
             const hash = await secureHashPassword(password, SECRET);
             await DB.prepare(`INSERT INTO users (username,email,password,role,totp_secret) VALUES (?,?,?,0,null)`).bind(username, email, hash).run();
+            await DB.prepare(`DELETE FROM email_verifications WHERE id = ?`).bind(codeRec.id).run();
             return success(null, "注册完成");
         }
 
@@ -314,23 +342,43 @@ export async function onRequest({ request, env }) {
             const { email, type, hCaptchaToken } = await request.json();
             const cfOk = await verifyHCaptcha(hCaptchaToken, env.HCAPTCHA_SECRET_KEY);
             if (!cfOk) return fail("人机验证失败");
+            if (!email) return fail("请输入邮箱");
+            // register：邮箱必须未注册；resetpwd：邮箱必须已注册
+            const codeType = type === "register" ? "register" : "resetpwd";
             const user = await DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first();
-            if (!user) return fail("邮箱未注册");
-            const token = await hmacSha256(SECRET, `${user.id}-${Date.now()}`);
+            if (codeType === "register") {
+                if (user) return fail("该邮箱已注册，请直接登录");
+            } else if (!user) {
+                return fail("邮箱未注册");
+            }
+            const code = await hmacSha256(SECRET, `${email}-${Date.now()}-${Math.random()}`);
             const expire = new Date(Date.now() + 3600 * 1000).toISOString();
-            await DB.prepare(`INSERT INTO email_verifications (uid,code,action,expire_at) VALUES (?,?,?,?)`).bind(user.id, token, type, expire).run();
-            const resetUrl = `${ORIGIN}/reset.html?token=${token}`;
-            await sendEmail(env.RESEND_API_KEY, email, "密码重置", `<a href="${resetUrl}">重置链接</a>`);
+            // 注册场景用户尚不存在，uid 用 0 占位（校验时只按 code + action 匹配）
+            await DB.prepare(`INSERT INTO email_verifications (uid,code,action,expire_at) VALUES (?,?,?,?)`)
+                .bind(codeType === "register" ? 0 : user.id, code, codeType, expire).run();
+            if (codeType === "register") {
+                const mailRes = await sendEmail(env.RESEND_API_KEY, email, "注册验证码",
+                    `<p>您的注册验证码是：<b style="font-size:20px">${code}</b></p><p>1小时内有效。</p>`);
+                if (!mailRes?.ok) return fail("邮件发送失败，请稍后重试", 502);
+                return success(null, "验证码已发送，请查收邮件");
+            }
+            const resetUrl = `${ORIGIN}/reset.html?token=${code}`;
+            const mailRes = await sendEmail(env.RESEND_API_KEY, email, "密码重置",
+                `<p>请点击链接重置密码：<a href="${resetUrl}">${resetUrl}</a></p><p>链接1小时内有效。</p>`);
+            if (!mailRes?.ok) return fail("邮件发送失败，请稍后重试", 502);
             return success(null, "邮件已发送");
         }
 
         // 重置密码
         if (action === "resetPwd" && method === "POST") {
             const { email, code, newPwd } = await request.json();
-            const rec = await DB.prepare(`SELECT uid FROM email_verifications WHERE email=? AND code=? AND expire_at > ?`).bind(email, code, new Date().toISOString()).first();
+            const rec = await DB.prepare(`
+        SELECT id, uid FROM email_verifications WHERE code = ? AND action = 'resetpwd' AND expire_at > ?
+      `).bind(String(code || "").trim(), new Date().toISOString()).first();
             if (!rec) return fail("验证码失效");
             const hash = await secureHashPassword(newPwd, SECRET);
             await DB.prepare(`UPDATE users SET password = ? WHERE id = ?`).bind(hash, rec.uid).run();
+            await DB.prepare(`DELETE FROM email_verifications WHERE id = ?`).bind(rec.id).run();
             return success(null, "重置完成");
         }
 
@@ -352,7 +400,11 @@ export async function onRequest({ request, env }) {
         if (action === "adminList") {
             const u = await getLoginUser(request, SECRET, DB);
             if (!["admin", "owner"].includes(u?.role)) return fail("无管理员权限", 403);
-            const list = await DB.prepare(`SELECT id,username,email,role,ban_until,totp_secret FROM users`).all();
+            const list = await DB.prepare(`
+        SELECT id, username, email, role, ban_until, is_cancel,
+               (totp_secret IS NOT NULL) AS totp_enabled
+        FROM users
+      `).all();
             return success(list.results);
         }
 
@@ -361,10 +413,12 @@ export async function onRequest({ request, env }) {
             const u = await getLoginUser(request, SECRET, DB);
             if (!["admin", "owner"].includes(u?.role)) return fail("无管理员权限", 403);
             const { username, email, password, role } = await request.json();
+            // 仅允许创建低权限角色，防止越权建 owner/admin
+            const safeRole = ["guest", "writer", "banned"].includes(role) ? role : "guest";
             const ex = await DB.prepare(`SELECT id FROM users WHERE username=? OR email=?`).bind(username, email).first();
             if (ex) return fail("账号已存在");
             const hash = await secureHashPassword(password, SECRET);
-            await DB.prepare(`INSERT INTO users (username,email,password,role,totp_secret) VALUES (?,?,?,?,null)`).bind(username, email, hash, role).run();
+            await DB.prepare(`INSERT INTO users (username,email,password,role,totp_secret) VALUES (?,?,?,?,null)`).bind(username, email, hash, safeRole).run();
             return success(null, "创建成功");
         }
 
@@ -373,6 +427,12 @@ export async function onRequest({ request, env }) {
             const u = await getLoginUser(request, SECRET, DB);
             if (!["admin", "owner"].includes(u?.role)) return fail("无管理员权限", 403);
             const { targetUid, newRole } = await request.json();
+            if (!["owner", "admin", "writer", "guest", "banned"].includes(newRole)) return fail("无效的角色");
+            if (targetUid === u.id) return fail("不能修改自己的角色");
+            const target = await DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid).first();
+            if (!target) return fail("用户不存在");
+            if (target.role === "owner") return fail("不能修改站主的角色");
+            if (u.role !== "owner" && target.role === "admin") return fail("管理员不能修改其他管理员的角色");
             await DB.prepare(`UPDATE users SET role = ? WHERE id = ?`).bind(newRole, targetUid).run();
             return success(null, "修改完成");
         }
@@ -382,7 +442,14 @@ export async function onRequest({ request, env }) {
             const u = await getLoginUser(request, SECRET, DB);
             if (!["admin", "owner"].includes(u?.role)) return fail("无管理员权限");
             const { targetUid, banDays } = await request.json();
-            const end = new Date(Date.now() + banDays * 86400 * 1000).toISOString();
+            const days = Number(banDays);
+            if (!Number.isFinite(days) || days <= 0 || days > 3650) return fail("封禁天数不合法");
+            if (targetUid === u.id) return fail("不能封禁自己");
+            const target = await DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid).first();
+            if (!target) return fail("用户不存在");
+            if (target.role === "owner") return fail("不能封禁站主");
+            if (u.role !== "owner" && target.role === "admin") return fail("管理员不能封禁其他管理员");
+            const end = new Date(Date.now() + days * 86400 * 1000).toISOString();
             await DB.prepare(`UPDATE users SET ban_until = ? WHERE id = ?`).bind(end, targetUid).run();
             return success(null, "封禁成功");
         }
@@ -392,6 +459,11 @@ export async function onRequest({ request, env }) {
             const u = await getLoginUser(request, SECRET, DB);
             if (!["admin", "owner"].includes(u?.role)) return fail("无管理员权限");
             const { targetUid } = await request.json();
+            if (targetUid === u.id) return fail("不能删除自己");
+            const target = await DB.prepare(`SELECT role FROM users WHERE id = ?`).bind(targetUid).first();
+            if (!target) return fail("用户不存在");
+            if (target.role === "owner") return fail("不能删除站主");
+            if (u.role !== "owner" && target.role === "admin") return fail("管理员不能删除其他管理员");
             await DB.prepare(`DELETE FROM users WHERE id = ?`).bind(targetUid).run();
             return success(null, "删除完成");
         }
@@ -419,7 +491,7 @@ export async function onRequest({ request, env }) {
             if (u.totp_secret) return fail("已绑定二次验证");
             const secret = generateTOTPSecret();
             const issuer = "blog.lizhuoxuan.dpdns.org";
-            const label = encodeURIComponent(`${issuer}:${u.email}`);
+            const label = encodeURIComponent(`${issuer}:${u.username || u.email || u.id}`);
             const qrUrl = `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}`;
             return success({ secret, qrUrl });
         }

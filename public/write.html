@@ -17,16 +17,15 @@
             <div style="margin:10px 0">
                 <label><input type="checkbox" id="publishSwitch"> 直接发布（取消勾选为草稿）</label>
             </div>
-            <button class="glass-btn" onclick="submitArticle()">保存文章</button>
+            <button class="glass-btn" onclick="submitArticle(this)">保存文章</button>
         </div>
     </div>
     <script>
-        async function submitArticle() {
+        async function submitArticle(btn) {
             const title = document.getElementById('title').value.trim();
             const content = document.getElementById('content').value.trim();
             const publish = document.getElementById('publishSwitch').checked ? 1 : 0;
             if (!title || !content) return alert('标题和内容不能为空');
-            const btn = event.target;
             btn.disabled = true;
             try {
                 const res = await fetch('/api/post?action=create', {

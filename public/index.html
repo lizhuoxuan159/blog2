@@ -29,8 +29,8 @@ let currentUser = null;
 async function checkLogin() {
   const res = await fetch('/api/user?action=check');
   const data = await res.json();
-  isLogin = data.login;
-  currentUser = data;
+  isLogin = !!data.data?.login;
+  currentUser = data.data || null;
   renderNav();
 }
 // 渲染导航栏（带角色标识、管理员入口）
@@ -39,7 +39,7 @@ function renderNav() {
   if(isLogin){
     let roleText = "";
     if(currentUser.role === "owner") roleText = "【站主】";
-    if(currentUser.role === "admin") roleText = "【管理员】";
+    else if(currentUser.role === "admin") roleText = "【管理员】";
     else if(currentUser.role === "writer") roleText = "【作家】";
     else if(currentUser.role === "guest") roleText = "【访客】";
     nav.innerHTML = `
@@ -73,7 +73,7 @@ async function loadPosts(){
   const res = await fetch('/api/post?action=list');
   const posts = await res.json();
   const wrap = document.getElementById('postList');
-  if(posts.length === 0){
+  if(!Array.isArray(posts) || posts.length === 0){
     wrap.innerHTML = '<p>暂无文章</p>';
     return;
   }
@@ -95,7 +95,7 @@ function openPost(id){
 }
 function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace( />/g,'&gt;');
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 async function delPostIndex(pid){
   if(!confirm('确定删除该文章？不可恢复！')) return;
@@ -108,9 +108,11 @@ async function delPostIndex(pid){
   alert(ret.msg);
   loadPosts();
 }
-// 初始化
-checkLogin();
-loadPosts();
+// 初始化（先取登录态再加载列表，保证删除按钮权限判断正确）
+(async function initPage() {
+  await checkLogin();
+  loadPosts();
+})();
 </script>
 </body>
 </html>

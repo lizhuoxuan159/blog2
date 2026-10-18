@@ -16,25 +16,34 @@
         </div>
     </div>
     <script>
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
         async function loadVotes() {
-            const res = await fetch('/api/ban?action=list');
-            const data = await res.json();
-            const wrap = document.getElementById('voteList');
-            wrap.innerHTML = '';
-            data.forEach(item => {
-                wrap.innerHTML += `
+            try {
+                const res = await fetch('/api/ban?action=list');
+                const data = await res.json();
+                const wrap = document.getElementById('voteList');
+                wrap.innerHTML = '';
+                if (!Array.isArray(data)) return;
+                data.forEach(item => {
+                    wrap.innerHTML += `
         <div style="margin:10px;padding:10px;border:1px solid #444">
-          <h4>目标用户：${item.targetUserName}</h4>
-          <p>理由：${item.reason}</p>
-          <p>支持：${item.yesCount} 反对：${item.noCount}</p>
-          <p>状态：${item.status}</p>
+          <h4>目标用户：${escapeHtml(item.targetUserName)}</h4>
+          <p>理由：${escapeHtml(item.reason)}</p>
+          <p>支持：${escapeHtml(item.yesCount)} 反对：${escapeHtml(item.noCount)}</p>
+          <p>状态：${escapeHtml(item.status)}</p>
           ${item.status === 'active' && !item.myVote ? `
             <button onclick="vote(${item.id},'yes')">支持放逐</button>
             <button onclick="vote(${item.id},'no')">反对</button>
           ` : ''}
         </div>
         `
-            })
+                })
+            } catch (e) {
+                console.error('加载投票列表失败', e);
+            }
         }
         async function vote(voteId, type) {
             const res = await fetch('/api/ban?action=vote', {

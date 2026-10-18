@@ -538,9 +538,9 @@ async function checkLoginState() {
   try {
     const res = await fetch('/api/user?action=check');
     const data = await res.json();
-    if (data.login) {
-      currentLoginUid = data.uid;
-      currentLoginUser = data;
+    if (data.data?.login) {
+      currentLoginUid = data.data.uid;
+      currentLoginUser = data.data;
       loadConversations();
       startRefresh();
       checkUrlParams();
@@ -608,12 +608,12 @@ async function loadConversations() {
 
 async function openChat(userId, userName) {
   currentChatUserId = userId;
-  currentChatUserName = userName;
-  
+  currentChatUserName = userName || `用户${userId}`;
+
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('chatContent').style.display = 'flex';
-  document.getElementById('chatName').textContent = userName;
-  document.getElementById('chatAvatar').textContent = userName.charAt(0).toUpperCase();
+  document.getElementById('chatName').textContent = currentChatUserName;
+  document.getElementById('chatAvatar').textContent = currentChatUserName.charAt(0).toUpperCase();
   
   if (window.innerWidth <= 700) {
     document.getElementById('sidebar').classList.remove('show');

@@ -59,8 +59,13 @@ async function getLoginUser(request, secret, db) {
 }
 
 // ===================== hCaptcha 人机验证 =====================
+// 未配置 HCAPTCHA_SECRET_KEY 时跳过验证（降级），配置后自动启用
 async function verifyHCaptcha(token, secretKey) {
-    if (!token || !secretKey) return false;
+    if (!secretKey) {
+        console.warn("未配置 HCAPTCHA_SECRET_KEY，跳过人机验证");
+        return true;
+    }
+    if (!token) return false;
     const res = await fetch("https://api.hcaptcha.com/siteverify", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -270,6 +275,7 @@ export async function onRequest({ request, env }) {
         SELECT role, ban_until FROM users WHERE id = ?
       `).bind(loginUser.uid).first();
             const { postId, content, hCaptchaToken } = await request.json();
+            if (!content || !content.trim()) return jsonResp({ code: 1, msg: '评论内容不能为空' });
 
             // hCaptcha 验证
             const hcOk = await verifyHCaptcha(hCaptchaToken, env.HCAPTCHA_SECRET_KEY);
@@ -286,7 +292,6 @@ export async function onRequest({ request, env }) {
             if (banRole.includes(loginUser.role)) {
                 return jsonResp({ code: 98, msg: '封禁账号无法发表评论' }, 403);
             }
-            if (!content.trim()) return jsonResp({ code: 1, msg: '评论内容不能为空' });
             const p = await db.prepare("SELECT publish FROM posts WHERE id=?").bind(postId).first();
             if (!p) return jsonResp({ code: 1, msg: '文章不存在' });
             if (p.publish === 0) return jsonResp({ code: 403, msg: '草稿文章暂不支持评论' }, 403);

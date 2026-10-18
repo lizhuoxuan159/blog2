@@ -15,23 +15,27 @@
         <div class="glass" style="max-width:420px;margin:0 auto">
             <h2>重置账户密码</h2>
             <input type="email" id="email" placeholder="注册邮箱">
-            <input type="text" id="code" placeholder="6位验证码">
+            <input type="text" id="code" placeholder="邮件中的验证码/令牌">
             <input type="password" id="newPwd" placeholder="新密码">
-            <button class="glass-btn" style="width:100%;margin-top:12px" onclick="resetPassword()">确认重置</button>
+            <button class="glass-btn" style="width:100%;margin-top:12px" onclick="resetPassword(this)">确认重置</button>
         </div>
     </div>
     <script>
         const urlParams = new URLSearchParams(location.search);
-        document.getElementById('email').value = urlParams.get('email') || '';
-        async function resetPassword() {
+        // 支持两种入口：邮件链接 ?token=xxx 自动填入；登录页 ?email=xxx 预填邮箱
+        const urlToken = urlParams.get('token');
+        const urlEmail = urlParams.get('email');
+        document.getElementById('email').value = urlEmail || '';
+        if (urlToken) document.getElementById('code').value = urlToken;
+
+        async function resetPassword(btn) {
             const email = document.getElementById('email').value.trim();
             const code = document.getElementById('code').value.trim();
             const newPwd = document.getElementById('newPwd').value.trim();
-            if (!email || !code || !newPwd) return alert('请填写完整信息');
-            const btn = event.target;
+            if (!code || !newPwd) return alert('请填写验证码和新密码');
             btn.disabled = true;
             try {
-                const res = await fetch('/api/user/reset-pwd', {
+                const res = await fetch('/api/user?action=resetPwd', {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ email, code, newPwd })

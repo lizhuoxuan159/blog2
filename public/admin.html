@@ -15,6 +15,7 @@
         <div class="glass" style="margin-bottom:20px">
             <h3>手动创建新用户</h3>
             <input type="text" id="newUser" placeholder="用户名">
+            <input type="email" id="newEmail" placeholder="邮箱">
             <input type="password" id="newPwd" placeholder="初始密码">
             <select id="newRole">
                 <option value="guest">访客 guest</option>
@@ -31,9 +32,9 @@
     <script>
         let myRole = "";
         let myUid = null;
-        // 登录校验
+        // 登录校验：仅 admin / owner 可进入
         async function checkAuth() {
-            const res = await fetch('/api/user/check');
+            const res = await fetch('/api/user?action=check');
             const data = await res.json();
             if (!data.data?.login) {
                 const currentUrl = location.href;
@@ -42,30 +43,37 @@
             }
             myRole = data.data.role;
             myUid = data.data.uid;
-            if (myRole === 'guest' || myRole === 'banned') {
+            if (myRole !== 'admin' && myRole !== 'owner') {
                 location.href = `/error.html?code=403&msg=对不起，你没有权限`;
                 return;
             }
             loadUserList();
         }
-        // 创建用户接口 /api/user/admin-add
+        // 创建用户
         async function adminCreateUser() {
             const username = document.getElementById('newUser').value.trim();
+            const email = document.getElementById('newEmail').value.trim();
             const pwd = document.getElementById('newPwd').value.trim();
             const role = document.getElementById('newRole').value;
             if (!username || !pwd) return alert('用户名密码不能为空');
-            const res = await fetch('/api/user/admin-add', {
+            if (!email) return alert('请填写邮箱');
+            const res = await fetch('/api/user?action=adminAdd', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password: pwd, role })
+                body: JSON.stringify({ username, email, password: pwd, role })
             })
             const ret = await res.json();
             alert(ret.msg);
+            if (ret.code === 0) {
+                document.getElementById('newUser').value = '';
+                document.getElementById('newEmail').value = '';
+                document.getElementById('newPwd').value = '';
+            }
             loadUserList();
         }
-        // 加载用户列表 /api/user/admin-list
+        // 加载用户列表
         async function loadUserList() {
-            const res = await fetch('/api/user/admin-list');
+            const res = await fetch('/api/user?action=adminList');
             const data = await res.json();
             if (data.code !== 0) {
                 alert(data.msg);
@@ -95,30 +103,27 @@
                 `;
                     }
                 }
-                let delDisabled = false;
-                if (myRole === 'admin' && (u.role === 'admin' || u.role === 'owner')) {
-                    delDisabled = true;
-                }
+                const isProtected = (u.role === 'owner') || (myRole === 'admin' && u.role === 'admin');
                 let banInfo = u.ban_until ? `封禁至:${u.ban_until}` : '';
                 let cancelInfo = u.is_cancel === 1 ? "【已注销】" : "";
-                let totpState = u.totp_secret ? "已开启2FA" : "无2FA";
+                let totpState = u.totp_enabled ? "已开启2FA" : "无2FA";
                 wrap.innerHTML += `
-            <div style="margin:10px 0;padding:10px;border:1px solid rgba(255,255,0.2);border-radius:8px;display:flex;align-items:center;gap:15px;flex-wrap:wrap">
+            <div style="margin:10px 0;padding:10px;border:1px solid rgba(255,255,0,0.2);border-radius:8px;display:flex;align-items:center;gap:15px;flex-wrap:wrap">
               <span>ID:${u.id} | 用户名:${escapeHtml(u.username)} | 角色:${u.role} | ${totpState} ${banInfo} ${cancelInfo}</span>
-              <select id="role_${u.id}" ${(myRole === 'admin' && (u.role === 'owner' || u.role === 'admin')) ? 'disabled' : ''}>
+              <select id="role_${u.id}" ${isProtected ? 'disabled' : ''}>
                 ${optionHtml}
               </select>
-              <button class="glass-btn" onclick="saveRole(${u.id})" ${(myRole === 'admin' && (u.role === 'owner' || u.role === '')) ? 'disabled' : ''}>保存修改</button>
-              <button class="glass-btn" onclick="banUser(${u.id})">设置封禁天数</button>
-              <button class="glass-btn" style="background:rgba(255,80,0.25)" onclick="delUser(${u.id},'${escapeHtml(u.username)}')" ${delDisabled ? 'disabled' : ''}>删除用户</button>
+              <button class="glass-btn" onclick="saveRole(${u.id})" ${isProtected ? 'disabled' : ''}>保存修改</button>
+              <button class="glass-btn" onclick="banUser(${u.id})" ${isProtected ? 'disabled' : ''}>设置封禁天数</button>
+              <button class="glass-btn" style="background:rgba(255,80,0.25)" onclick="delUser(${u.id},'${escapeHtml(u.username)}')" ${isProtected ? 'disabled' : ''}>删除用户</button>
             </div>
             `
             })
         }
-        // 修改角色 /api/user/admin/set-role
+        // 修改角色
         async function saveRole(uid) {
             const newRole = document.getElementById(`role_${uid}`).value;
-            const res = await fetch('/api/user/admin/set-role', {
+            const res = await fetch('/api/user?action=setRole', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ targetUid: uid, newRole })
@@ -127,23 +132,23 @@
             alert(ret.msg);
             loadUserList();
         }
-        // 封禁 /api/user/admin/ban
+        // 封禁
         async function banUser(targetUid) {
             const days = prompt("请输入封禁天数：");
             if (!days || isNaN(Number(days)) || Number(days) <= 0) return;
-            const res = await fetch('/api/user/admin/ban', {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+            const res = await fetch('/api/user?action=banUser', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ targetUid: targetUid, banDays: Number(days) })
             })
             const ret = await res.json();
             alert(ret.msg);
             loadUserList();
         }
-        // 删除用户 /api/user/admin/delete
+        // 删除用户
         async function delUser(uid, uname) {
             if (!confirm(`确定删除用户【${uname}】？文章保留，不可恢复！`)) return;
-            const res = await fetch('/api/user/admin/delete', {
+            const res = await fetch('/api/user?action=delUser', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ targetUid: uid })

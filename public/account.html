@@ -12,42 +12,42 @@
         <nav>
             <a href="/index.html"><button class="glass-btn">返回首页</button></a>
             <a href="javascript:logout()"><button class="glass-btn" style="background:rgba(220,60,0.2)">退出登录</button></a>
-    </div>
-    <div class="glass" id="userInfoBox">
-        <h2>个人信息</h2>
-        <p>用户名：<span id="showUsername"></span></p>
-        <p>角色：<span id="showRole"></span></p>
-        <p>微软绑定状态：<span id="msBindTip"></span> <button id="unbindMsBtn" style="display:none" onclick="unbindMicrosoft()">解绑微软账号</button></p>
-        <p>GitHub绑定状态：<span id="ghBindTip"></span> <button id="unbindGhBtn" style="display:none" onclick="unbindGithub()">解绑GitHub账号</button></p>
-        <hr>
-        <h3>两步验证(2FA)</h3>
-        <p id="totpTip"></p>
-        <div id="totpOff">
-            <button class="glass-btn" onclick="genTOTP()">生成绑定密钥</button>
-            <div id="totpSecretBox" style="margin-top:10px;display:none">
-                <p>密钥：<span id="secretStr"></span></p>
-                <p>二维码链接：<a id="qrLink" target="_blank">打开</a></p>
-                <input type="text" placeholder="6位验证码" id="totpCode">
-                <button class="glass-btn" onclick="bindTOTP()">确认绑定</button>
+        </nav>
+        <div class="glass" id="userInfoBox">
+            <h2>个人信息</h2>
+            <p>用户名：<span id="showUsername"></span></p>
+            <p>角色：<span id="showRole"></span></p>
+            <p>微软绑定状态：<span id="msBindTip"></span> <button id="unbindMsBtn" style="display:none" onclick="unbindMicrosoft()">解绑微软账号</button></p>
+            <p>GitHub绑定状态：<span id="ghBindTip"></span> <button id="unbindGhBtn" style="display:none" onclick="unbindGithub()">解绑GitHub账号</button></p>
+            <hr>
+            <h3>两步验证(2FA)</h3>
+            <p id="totpTip"></p>
+            <div id="totpOff">
+                <button class="glass-btn" onclick="genTOTP()">生成绑定密钥</button>
+                <div id="totpSecretBox" style="margin-top:10px;display:none">
+                    <p>密钥：<span id="secretStr"></span></p>
+                    <p>二维码链接：<a id="qrLink" target="_blank">打开</a></p>
+                    <input type="text" placeholder="6位验证码" id="totpCode">
+                    <button class="glass-btn" onclick="bindTOTP()">确认绑定</button>
+                </div>
+            </div>
+            <div id="totpOn" style="display:none">
+                <button class="glass-btn" style="background:rgba(255,70,0.2)" onclick="unbindTOTP()">关闭两步验证</button>
             </div>
         </div>
-        <div id="totpOn" style="display:none">
-            <button class="glass-btn" style="background:rgba(255,70,0.2)" onclick="unbindTOTP()">关闭两步验证</button>
+        <div class="glass" style="margin-top:20px">
+            <h3>修改登录密码</h3>
+            <input type="password" id="oldPwd" placeholder="原密码">
+            <input type="password" id="newPwd" placeholder="新密码">
+            <button class="glass-btn" onclick="changePassword(this)">确认修改</button>
         </div>
-    </div>
-    <div class="glass" style="margin-top:20px">
-        <h3>修改登录密码</h3>
-        <input type="password" id="oldPwd" placeholder="原密码">
-        <input type="password" id="newPwd" placeholder="新密码">
-        <button class="glass-btn" onclick="changePassword()">确认修改</button>
-    </div>
     </div>
     <script>
         let loginData = null;
         let tempSecret = "";
         // 页面加载校验登录
         (async function init() {
-            const res = await fetch('/api/user/check');
+            const res = await fetch('/api/user?action=check');
             const data = await res.json();
             if (!data.data?.login) {
                 const currentUrl = location.href;
@@ -72,9 +72,9 @@
                 document.getElementById('ghBindTip').innerText = "未绑定";
             }
             // 2FA状态
-            const totpRes = await fetch("/api/user/totp-status");
+            const totpRes = await fetch("/api/user?action=totpStatus");
             const totpData = await totpRes.json();
-            if (totpData.data.enabled) {
+            if (totpData.data?.enabled) {
                 document.getElementById("totpTip").innerText = "已开启两步验证，登录需要验证码";
                 document.getElementById("totpOn").style.display = "block";
                 document.getElementById("totpOff").style.display = "none";
@@ -85,14 +85,13 @@
             }
         })();
         // 修改密码
-        async function changePassword() {
+        async function changePassword(btn) {
             const oldPwd = document.getElementById('oldPwd').value.trim();
             const newPwd = document.getElementById('newPwd').value.trim();
             if (!oldPwd || !newPwd) return alert("请填写完整新旧密码");
-            const btn = event.target;
             btn.disabled = true;
             try {
-                const res = await fetch('/api/user/change-pwd', {
+                const res = await fetch('/api/user?action=changePwd', {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ oldPwd, newPwd })
@@ -100,7 +99,8 @@
                 const ret = await res.json();
                 alert(ret.msg);
                 if (ret.code === 0) {
-                    location.href = "/api/user/logout";
+                    await doLogout();
+                    location.href = "/login.html";
                 }
             } catch (err) {
                 alert("请求异常，稍后重试");
@@ -111,7 +111,7 @@
         // 解绑微软
         async function unbindMicrosoft() {
             if (!confirm("确定解绑Microsoft登录账号？解绑后只能用户名密码登录")) return;
-            const res = await fetch('/api/user/totp-unbind', {
+            const res = await fetch('/api/user?action=unbindMs', {
                 method: "POST",
                 headers: { "Content-Type": "application/json" }
             })
@@ -122,7 +122,7 @@
         // 解绑GitHub
         async function unbindGithub() {
             if (!confirm("确认解绑GitHub账号？")) return;
-            const res = await fetch("/api/user/unbind-github", {
+            const res = await fetch("/api/user?action=unbindGh", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" }
             })
@@ -132,8 +132,9 @@
         }
         // 生成2FA密钥
         async function genTOTP() {
-            const res = await fetch("/api/user/totp-generate", { method: "POST" });
+            const res = await fetch("/api/user?action=totpGen", { method: "POST" });
             const d = await res.json();
+            if (d.code !== 0) return alert(d.msg);
             tempSecret = d.data.secret;
             document.getElementById("secretStr").innerText = tempSecret;
             document.getElementById("qrLink").href = d.data.qrUrl;
@@ -143,7 +144,7 @@
         async function bindTOTP() {
             const code = document.getElementById("totpCode").value.trim();
             if (!code) return alert("请输入6位验证码");
-            const res = await fetch("/api/user/totp-bind", {
+            const res = await fetch("/api/user?action=totpBind", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ secret: tempSecret, code })
@@ -156,7 +157,7 @@
         async function unbindTOTP() {
             const pwd = prompt("请输入当前登录密码确认关闭两步验证");
             if (!pwd) return;
-            const res = await fetch("/api/user/totp-unbind", {
+            const res = await fetch("/api/user?action=totpUnbind", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ password: pwd })
@@ -165,9 +166,17 @@
             alert(d.msg);
             if (d.code === 0) location.reload();
         }
-        // 退出登录
-        function logout() {
-            location.href = "/api/user/logout";
+        // 统一退出登录（POST，清服务端会话）
+        async function doLogout() {
+            try {
+                await fetch("/api/user?action=logout", { method: "POST" });
+            } catch (e) {
+                console.error("退出登录请求失败", e);
+            }
+        }
+        async function logout() {
+            await doLogout();
+            location.href = "/index.html";
         }
     </script>
 </body>

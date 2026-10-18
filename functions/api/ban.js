@@ -215,8 +215,10 @@ export async function onRequest({ request, env }) {
             if (existing) {
                 return jsonResp({ code: 1, msg: '该用户已有进行中的投票' });
             }
+            // 每天限制按东八区自然日计算（Workers 运行时为 UTC）
+            // UTC+8 当天 0 点 = 当前 UTC 时间戳所在 UTC 日 0 点前移 8 小时
             const todayStart = new Date();
-            todayStart.setHours(0, 0, 0, 0);
+            todayStart.setUTCHours(-8, 0, 0, 0);
             const todayVotes = await db.prepare(`
         SELECT COUNT(*) as count FROM ban_votes WHERE initiator_id = ? AND created_at >= ?
       `).bind(loginUser.uid, todayStart.toISOString()).first();
@@ -230,7 +232,7 @@ export async function onRequest({ request, env }) {
                 return jsonResp({ code: 1, msg: '理由不能超过200字' });
             }
             const duration = Math.min(Math.max(durationHours || 24, 1), 72);
-            const endTime = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+            const endTime = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString();
             const result = await db.prepare(`
         INSERT INTO ban_votes (target_user_id, initiator_id, reason, duration_hours, end_time)
         VALUES (?, ?, ?, ?, ?)

@@ -11,20 +11,30 @@
     <div class="container">
         <nav><a href="/index.html"><button>首页</button></a></nav>
         <div class="glass" id="msgBox" style="height:400px;overflow-y:auto"></div>
-        <div style="display:flex;gap:5;margin-top:10px">
+        <div style="display:flex;gap:5px;margin-top:10px">
             <input id="msgInput" style="flex:1" placeholder="输入消息">
             <button onclick="sendMsg()">发送</button>
         </div>
     </div>
     <script>
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
         async function refreshMsg() {
-            const res = await fetch('/api/chat?action=list');
-            const data = await res.json();
-            const box = document.getElementById('msgBox');
-            box.innerHTML = '';
-            data.forEach(m => {
-                box.innerHTML += `<div><b>${m.userName}</b>：${m.content}</div>`
-            })
+            try {
+                const res = await fetch('/api/chat?action=list');
+                const data = await res.json();
+                const box = document.getElementById('msgBox');
+                box.innerHTML = '';
+                if (!Array.isArray(data)) return;
+                data.forEach(m => {
+                    box.innerHTML += `<div style="margin:4px 0"><b>${escapeHtml(m.userName)}</b>：${escapeHtml(m.content)}</div>`
+                })
+                box.scrollTop = box.scrollHeight;
+            } catch (e) {
+                console.error('加载消息失败', e);
+            }
         }
         async function sendMsg() {
             const content = document.getElementById('msgInput').value.trim();
@@ -41,7 +51,7 @@
             } else alert(d.msg);
         }
         refreshMsg();
-        setInterval(refresh, 5000);
+        setInterval(refreshMsg, 5000);
     </script>
 </body>
 </html>

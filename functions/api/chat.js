@@ -300,7 +300,7 @@ export async function onRequest({ request, env }) {
           SELECT username, role, is_cancel
           FROM users
           WHERE id = ?
-        `).bind(conv.other_user).first();
+        `).bind(conv.other_user_id).first();
                 const unreadRes = await db.prepare(`
           SELECT COUNT(*) as count
           FROM private_messages
@@ -345,7 +345,7 @@ export async function onRequest({ request, env }) {
                 content: msg.content,
                 isMe: msg.sender_id === uid,
                 createTime: toUTC8Time(msg.created_at),
-                isRead: msg.isRead
+                isRead: msg.is_read
             }));
             return jsonResp(messages);
         }
@@ -414,7 +414,7 @@ export async function onRequest({ request, env }) {
         UPDATE private_messages
         SET is_read = 1
         WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
-      `).bind(userId, loginUser).run();
+      `).bind(userId, loginUser.uid).run();
             return jsonResp({ code: 0, msg: '已标记为已读' });
         }
 

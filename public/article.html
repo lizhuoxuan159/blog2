@@ -103,8 +103,8 @@
             <h3>评论区</h3>
             <div id="cmInputArea" style="margin:15px 0;">
                 <textarea id="cmContent" style="width:100%;min-height:80px;padding:8px;border-radius:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;" placeholder="输入评论内容..."></textarea>
-                <!-- hCaptcha 组件 -->
-                <div class="h-captcha" data-sitekey="你的hCaptcha站点密钥" style="margin:10px 0;"></div>
+                <!-- hCaptcha 组件容器（未配置站点密钥时不渲染，自动跳过验证） -->
+                <div id="hcaptchaBox" style="margin:10px 0;"></div>
                 <div style="margin-top:8px;text-align:right">
                     <button class="glass-btn" onclick="submitComment()">发表评论</button>
                 </div>
@@ -114,6 +114,31 @@
         </div>
     </div>
     <script>
+        // ===== hCaptcha 配置 =====
+        // 填入你的 hCaptcha 站点密钥（sitekey）后自动启用人机验证；
+        // 留空则本页不渲染验证码，服务端同步降级跳过验证。
+        const HCAPTCHA_SITEKEY = "";
+
+        function getCaptchaToken() {
+            if (HCAPTCHA_SITEKEY && typeof hcaptcha !== 'undefined') {
+                try { return hcaptcha.getResponse() || ""; } catch (e) { return ""; }
+            }
+            return "";
+        }
+        function resetCaptcha() {
+            if (HCAPTCHA_SITEKEY && typeof hcaptcha !== 'undefined') {
+                try { hcaptcha.reset(); } catch (e) { /* ignore */ }
+            }
+        }
+        // 动态渲染验证码组件
+        if (HCAPTCHA_SITEKEY) {
+            window.addEventListener('load', function () {
+                if (typeof hcaptcha !== 'undefined') {
+                    hcaptcha.render('hcaptchaBox', { sitekey: HCAPTCHA_SITEKEY });
+                }
+            });
+        }
+
         let postId = new URLSearchParams(location.search).get('id');
         let currentLoginUid = null;
         let currentLoginRole = null;
@@ -125,6 +150,10 @@
         function escapeHtml(str) {
             if (!str) return '';
             return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        // 转义后将字符串安全嵌入 HTML 属性中的 JS 字符串字面量
+        function escapeAttrJsStr(str) {
+            return escapeHtml(String(str ?? '')).replace(/'/g, '&#39;');
         }
 
         // 跳转到私信
@@ -186,7 +215,7 @@
 
             document.getElementById('postTitle').innerText = data.title;
             document.getElementById('postInfo').innerHTML =
-                `作者：<span class="author-name" onclick="goPrivate(${data.author_id}, '${escapeHtml(authorName)}')" title="点击发私信">${escapeHtml(authorName)}</span> | ${data.created_at}`;
+                `作者：<span class="author-name" onclick="goPrivate(${data.author_id}, '${escapeAttrJsStr(authorName)}')" title="点击发私信">${escapeHtml(authorName)}</span> | ${data.created_at}`;
             document.getElementById('postContent').innerText = data.content;
 
             await checkLoginState();
@@ -249,7 +278,7 @@
             const res = await fetch(`/api/post?action=getComment&postId=${postId}`);
             const cmList = await res.json();
             const wrap = document.getElementById('commentList');
-            if (cmList.length === 0) {
+            if (!Array.isArray(cmList) || cmList.length === 0) {
                 wrap.innerHTML = '<p style="opacity:0.7">暂无评论</p>';
                 return;
             }
@@ -263,7 +292,7 @@
         <div class="comment-item">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span>
-              <span class="comment-user" onclick="goPrivate(${cm.userId}, '${escapeHtml(cm.userName)}')" title="点击发私信">${escapeHtml(cm.userName)}</span>
+              <span class="comment-user" onclick="goPrivate(${cm.userId}, '${escapeAttrJsStr(cm.userName)}')" title="点击发私信">${escapeHtml(cm.userName)}</span>
               · ${cm.createTime}
             </span>
             ${showDelBtn ? `<button class="glass-btn cm-del-btn" onclick="delComment(${cm.id})">删除</button>` : ''}
@@ -282,8 +311,8 @@
                 return;
             }
             // 获取 hCaptcha 响应
-            const hCaptchaToken = hcaptcha.getResponse();
-            if (!hCaptchaToken) {
+            const hCaptchaToken = getCaptchaToken();
+            if (HCAPTCHA_SITEKEY && !hCaptchaToken) {
                 alert('请完成人机验证');
                 return;
             }
@@ -295,11 +324,11 @@
             const ret = await res.json();
             if (ret.code === 0) {
                 document.getElementById('cmContent').value = '';
-                hcaptcha.reset(); // 重置验证码
+                resetCaptcha(); // 重置验证码
                 loadCommentList();
             } else {
                 alert(ret.msg);
-                hcaptcha.reset();
+                resetCaptcha();
             }
         }
 

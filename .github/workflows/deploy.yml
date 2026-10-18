@@ -1,0 +1,24 @@
+name: Deploy Blog System
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # 允许在 Actions 页面手动触发
+
+jobs:
+  deploy-pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 将 public/ 目录发布为 Cloudflare Pages（functions/ 会一并部署）
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: pages deploy public --project-name=blog2 --branch=main

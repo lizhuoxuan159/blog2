@@ -20,8 +20,8 @@
             <input type="password" id="password" placeholder="密码">
             <input type="text" id="totpCode" placeholder="两步验证6位验证码(未开启留空)">
 
-            <!-- hCaptcha 组件 -->
-            <div class="h-captcha" data-sitekey="你的hCaptcha站点密钥"></div>
+            <!-- hCaptcha 组件容器（未配置站点密钥时不渲染，自动跳过验证） -->
+            <div id="hcaptchaBox"></div>
 
             <button class="glass-btn" style="width:100%" onclick="doLogin()" id="loginBtn">登录</button>
             <a href="/api/user?action=githubLogin">
@@ -36,6 +36,31 @@
     </div>
 
     <script>
+        // ===== hCaptcha 配置 =====
+        // 填入你的 hCaptcha 站点密钥（sitekey）后自动启用人机验证；
+        // 留空则本页不渲染验证码，服务端同步降级跳过验证。
+        const HCAPTCHA_SITEKEY = "";
+
+        function getCaptchaToken() {
+            if (HCAPTCHA_SITEKEY && typeof hcaptcha !== 'undefined') {
+                try { return hcaptcha.getResponse() || ""; } catch (e) { return ""; }
+            }
+            return "";
+        }
+        function resetCaptcha() {
+            if (HCAPTCHA_SITEKEY && typeof hcaptcha !== 'undefined') {
+                try { hcaptcha.reset(); } catch (e) { /* ignore */ }
+            }
+        }
+        // 动态渲染验证码组件
+        if (HCAPTCHA_SITEKEY) {
+            window.addEventListener('load', function () {
+                if (typeof hcaptcha !== 'undefined') {
+                    hcaptcha.render('hcaptchaBox', { sitekey: HCAPTCHA_SITEKEY });
+                }
+            });
+        }
+
         async function doLogin() {
             const username = document.getElementById("username").value.trim();
             const password = document.getElementById("password").value.trim();
@@ -43,12 +68,12 @@
             const loginBtn = document.getElementById("loginBtn");
 
             // 获取 hCaptcha 响应
-            let hCaptchaToken = hcaptcha.getResponse();
+            let hCaptchaToken = getCaptchaToken();
             if (!username || !password) {
                 alert("请填写用户名和密码");
                 return;
             }
-            if (!hCaptchaToken) {
+            if (HCAPTCHA_SITEKEY && !hCaptchaToken) {
                 alert("请先完成人机验证");
                 return;
             }
@@ -72,7 +97,7 @@
                     alert("该账号开启两步验证，请填写6位验证码后重试");
                 } else {
                     alert(data.msg);
-                    hcaptcha.reset();
+                    resetCaptcha();
                 }
             } catch (err) {
                 alert("接口请求异常，请检查网络或者部署状态");
@@ -87,8 +112,8 @@
         async function openForgetPwd() {
             const email = prompt("输入你的注册邮箱");
             if (!email) return;
-            let hCaptchaToken = hcaptcha.getResponse();
-            if (!hCaptchaToken) {
+            let hCaptchaToken = getCaptchaToken();
+            if (HCAPTCHA_SITEKEY && !hCaptchaToken) {
                 alert("请先完成页面下方的人机验证");
                 return;
             }
@@ -100,9 +125,9 @@
             const json = await res.json();
             alert(json.msg);
             if (json.code === 0) {
-                location.href = `/reset.html?email=${email}`;
+                location.href = `/reset.html?email=${encodeURIComponent(email)}`;
             } else {
-                hcaptcha.reset();
+                resetCaptcha();
             }
         }
     </script>

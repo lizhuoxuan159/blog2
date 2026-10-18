@@ -1,2 +1,5 @@
-/*
+# 仅对 HTML 页面显式声明 UTF-8 编码。
+# 注意：切勿使用 /* 全局匹配强制 Content-Type，
+# 否则 .css/.js/.ico 会被当作 HTML，导致样式与脚本全部失效。
+/*.html
   Content-Type: text/html; charset=utf-8
