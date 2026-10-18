@@ -48,6 +48,7 @@ Pages 项目 → 设置 → 连接 Git 仓库，构建输出目录选 `public`�
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth 客户端密钥 | secret |
 | `CF_CLIENT_SECRET` | Codeforces OAuth 客户端密钥 | secret |
 | `HCAPTCHA_SECRET_KEY` | hCaptcha 服务端密钥（不配置则跳过人机验证） | secret |
+| `HCAPTCHA_SITE_KEY` | hCaptcha 站点密钥（兼容变量名 `HCAPTCHA`），前端经 `/api/config` 自动获取 | secret |
 | `RESEND_API_KEY` | Resend 邮件服务密钥（不配置则邮件功能不可用） | secret |
 | `GITHUB_CLIENT_ID` / `CF_CLIENT_ID` | OAuth 客户端 ID | 普通 |
 | `SITE_ORIGIN` | 站点完整地址（OAuth 回调用） | 普通 |
@@ -85,8 +86,11 @@ curl -X POST https://<你的域名>/api/init/ \
 
 ## 人机验证（hCaptcha）
 
-页面内 `HCAPTCHA_SITEKEY` 常量留空时不渲染验证码，服务端同步跳过验证；
-填入站点密钥后自动启用（服务端需同时配置 `HCAPTCHA_SECRET_KEY`）。
+服务端配置 `HCAPTCHA_SECRET_KEY`（密钥类型），前端站点密钥配置为 `HCAPTCHA_SITE_KEY`
+（兼容变量名 `HCAPTCHA`；两者在 Cloudflare 控制台以"密钥"类型添加即可，Functions 运行时均可读取）。
+
+页面加载时通过 `GET /api/config` 自动获取站点密钥：已配置则渲染验证码，未配置则不渲染、
+服务端同步跳过验证——无需改动任何前端代码。
 
 ## 本地开发
 

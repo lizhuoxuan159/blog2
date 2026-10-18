@@ -31,9 +31,35 @@
     </div>
     <script>
         // ===== hCaptcha 配置 =====
-        // 填入你的 hCaptcha 站点密钥（sitekey）后自动启用人机验证；
-        // 留空则本页不渲染验证码，服务端同步降级跳过验证。
-        const HCAPTCHA_SITEKEY = "";
+        // 站点密钥由服务端环境变量动态提供（Cloudflare 控制台中以"密钥"类型
+        // 配置的 HCAPTCHA_SITE_KEY，兼容变量名 HCAPTCHA）；
+        // 未配置时不渲染验证码，服务端同步降级跳过验证。
+        let HCAPTCHA_SITEKEY = "";
+        const captchaReady = (async function loadCaptchaConfig() {
+            try {
+                const res = await fetch("/api/config");
+                const j = await res.json();
+                HCAPTCHA_SITEKEY = j?.data?.hcaptchaSiteKey || "";
+            } catch (e) {
+                console.error("人机验证配置获取失败", e);
+            }
+            if (HCAPTCHA_SITEKEY) {
+                // 等待 hcaptcha 脚本就绪后渲染组件（load 事件 + 超时兜底）
+                await new Promise(function (resolve) {
+                    if (typeof hcaptcha !== "undefined") return resolve();
+                    if (document.readyState === "complete") return resolve();
+                    window.addEventListener("load", resolve);
+                    setTimeout(resolve, 5000);
+                });
+                try {
+                    if (typeof hcaptcha !== "undefined") {
+                        hcaptcha.render("hcaptchaBox", { sitekey: HCAPTCHA_SITEKEY });
+                    }
+                } catch (e) {
+                    console.error("hCaptcha 渲染失败", e);
+                }
+            }
+        })();
 
         function getCaptchaToken() {
             if (HCAPTCHA_SITEKEY && typeof hcaptcha !== 'undefined') {
@@ -46,20 +72,13 @@
                 try { hcaptcha.reset(); } catch (e) { /* ignore */ }
             }
         }
-        // 动态渲染验证码组件
-        if (HCAPTCHA_SITEKEY) {
-            window.addEventListener('load', function () {
-                if (typeof hcaptcha !== 'undefined') {
-                    hcaptcha.render('hcaptchaBox', { sitekey: HCAPTCHA_SITEKEY });
-                }
-            });
-        }
 
         let countdownTimer = null;
 
         async function sendEmailCode() {
             const email = document.getElementById("email").value.trim();
             const btn = document.getElementById("sendCodeBtn");
+            await captchaReady;
             const hCaptchaToken = getCaptchaToken();
             if (!email) return alert("填写邮箱");
             if (HCAPTCHA_SITEKEY && !hCaptchaToken) return alert("先完成人机验证");
@@ -98,6 +117,7 @@
             const email = document.getElementById("email").value.trim();
             const code = document.getElementById("emailCode").value.trim();
             const password = document.getElementById("password").value.trim();
+            await captchaReady;
             const hCaptchaToken = getCaptchaToken();
             if (!username || !email || !code || !password) return alert("请填写全部内容");
             if (HCAPTCHA_SITEKEY && !hCaptchaToken) return alert("完成人机验证");
