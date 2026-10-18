@@ -1,11 +1,11 @@
-﻿name = "blog2"
+name = "blog2"
 compatibility_date = "2025-10-01"
 pages_build_output_dir = "public"
 # 运行时明文变量（function 可通过 env.xxx 获取）
 [vars]
 GITHUB_CLIENT_ID = "Ov23lid2fnvzCXAcXZ0J"
 # Codeforces OAuth 客户端 ID（在 https://codeforces.com/settings/api 创建应用后填写）
-CF_CLIENT_ID = ""
+CF_CLIENT_ID = "YD1gWSdX8KMaz6w7YwQG9YbOarMFMP1E"
 SITE_ORIGIN = "https://blog.lizhuoxuan.com"
 [[d1_databases]]
 binding = "DB"
