@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>注册账号</title>
     <link rel="stylesheet" href="/css/style.css">
-    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    <!-- hCaptcha JS（data-cf-settings 豁免 Rocket Loader：被其接管时 api.js 能加载但 render() 静默失效，验证码不渲染） -->
+    <script src="https://js.hcaptcha.com/1/api.js" async defer data-cf-settings="rocketloader=off"></script>
 </head>
 <body>
     <div class="container">

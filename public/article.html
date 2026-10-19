@@ -8,7 +8,8 @@
     <title>文章详情</title>
     <link rel="stylesheet" href="/css/style.css">
     <!-- hCaptcha JS -->
-    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    <!-- hCaptcha JS（data-cf-settings 豁免 Rocket Loader：被其接管时 api.js 能加载但 render() 静默失效，验证码不渲染） -->
+    <script src="https://js.hcaptcha.com/1/api.js" async defer data-cf-settings="rocketloader=off"></script>
     <style>
         .comment-item {
             margin: 12px 0;
