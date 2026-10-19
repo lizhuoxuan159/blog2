@@ -8,17 +8,25 @@
 blog2/
 ├── public/                  # 静态站点（Pages 构建输出目录）
 │   ├── *.html               # 各页面（多页应用，无前端构建步骤）
-│   └── css/style.css
+│   ├── css/style.css
+│   └── _headers / _redirects  # Pages 响应头与重定向规则（必须位于此目录，放仓库根目录不生效）
 ├── functions/api/           # Pages Functions 后端 API
-│   ├── user.js              # 登录/注册/2FA/OAuth/用户管理
+│   ├── user.js              # 登录/注册/2FA/用户管理（路由 /api/user）
 │   ├── post.js              # 文章/评论
 │   ├── chat.js              # 犇犇广场/私信
-│   └── ban.js               # 放逐投票
+│   ├── ban.js               # 放逐投票
+│   ├── config.js            # 公开配置接口（/api/config，如 hCaptcha sitekey）
+│   ├── githubCallback.js    # GitHub OAuth 回调（/api/githubCallback）
+│   ├── codeforcesCallback.js# Codeforces OAuth 回调（/api/codeforcesCallback）
+│   └── init/[[path]].js     # 管理员初始化（/api/init/）
 ├── init.sql                 # D1 数据库 Schema（新环境初始化用）
 ├── wrangler.toml            # Cloudflare 配置（D1 绑定等）
-├── _headers / _redirects    # Pages 响应头与重定向规则
 └── .github/workflows/       # CI/CD（可选，见下文）
 ```
+
+> **路由注意事项**：Pages Functions 按文件路径路由——`functions/api/user.js` 只能收到
+> `/api/user` 的请求。因此每个独立路由（如 OAuth 回调）必须有自己独立的文件，
+> 写在其他文件里判断 `path` 是无效的（请求根本不会到达，会被静态资源兜底）。
 
 ## 部署
 

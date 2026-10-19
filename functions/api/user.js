@@ -1,4 +1,4 @@
-﻿// ========== 原生WebCrypto工具，零Node依赖 ==========
+// ========== 原生WebCrypto工具，零Node依赖 ==========
 async function hmacSha256(secret, content) {
     const encoder = new TextEncoder();
     const secretBytes = encoder.encode(secret);
@@ -166,20 +166,6 @@ async function verifyHCaptcha(token, secretKey) {
     return data.success === true;
 }
 
-// ===================== JWT 工具（解析 Codeforces id_token，零依赖） =====================
-function parseJwtPayload(jwt) {
-    try {
-        const parts = String(jwt).split(".");
-        if (parts.length !== 3) return null;
-        let b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-        b64 += "=".repeat((4 - (b64.length % 4)) % 4);
-        return JSON.parse(atob(b64));
-    } catch (e) {
-        console.error("JWT payload 解析失败：", e);
-        return null;
-    }
-}
-
 export async function onRequest({ request, env }) {
     try {
         if (request.method === "OPTIONS") return handleOptions();
@@ -190,102 +176,6 @@ export async function onRequest({ request, env }) {
         const DB = env.DB;
         const SECRET = env.SESSION_HMAC_SECRET;
         const ORIGIN = env.SITE_ORIGIN;
-
-        // ===================== 独立OAuth回调 =====================
-        if (path === "/api/githubCallback") {
-            const { code } = new URLSearchParams(url.search);
-            const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-                body: new URLSearchParams({
-                    client_id: env.GITHUB_CLIENT_ID,
-                    client_secret: env.GITHUB_CLIENT_SECRET,
-                    code
-                })
-            });
-            const tokenData = await tokenRes.json();
-            if (!tokenData?.access_token) {
-                return fail("GitHub登录授权失败，请重试", 401);
-            }
-            const userRes = await fetch("https://api.github.com/user", {
-                headers: { Authorization: `token ${tokenData.access_token}` }
-            });
-            const ghUser = await userRes.json();
-            const ghId = ghUser?.id ? String(ghUser.id) : null;
-            if (!ghId) {
-                return fail("无法获取GitHub账号信息，请重试", 401);
-            }
-            const email = ghUser.email || `${ghUser.login}@github.local`;
-            let dbUser = await DB.prepare(`SELECT * FROM users WHERE github_id = ?`).bind(ghId).first();
-            if (!dbUser) {
-                const randPwd = Math.random().toString(36).slice(2);
-                const hash = await secureHashPassword(randPwd, SECRET);
-                await DB.prepare(`INSERT INTO users (username,email,password,github_id,role,totp_secret) VALUES (?,?,?,?,0,null)`)
-                    .bind(`gh_${ghUser.login}`, email, hash, ghId).run();
-                dbUser = await DB.prepare(`SELECT * FROM users WHERE github_id = ?`).bind(ghId).first();
-            }
-            const sign = await hmacSha256(SECRET, String(dbUser.id));
-            const sid = `${dbUser.id}.${sign}`;
-            const redirect = Response.redirect(`${ORIGIN}/index.html`, 302);
-            redirect.headers.set("Set-Cookie", `sid=${sid}; Path=/; HttpOnly; SameSite=Lax`);
-            return redirect;
-        }
-
-        // ===================== 独立OAuth回调：Codeforces（OpenID Connect） =====================
-        if (path === "/api/codeforcesCallback") {
-            const { code } = new URLSearchParams(url.search);
-            if (!code) return fail("Codeforces登录回调缺少授权码", 400);
-            // 用授权码换取 token（client_secret_post 方式，凭据放在 body）
-            const tokenRes = await fetch("https://codeforces.com/oauth/token", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-                body: new URLSearchParams({
-                    grant_type: "authorization_code",
-                    code,
-                    client_id: env.CF_CLIENT_ID,
-                    client_secret: env.CF_CLIENT_SECRET,
-                    redirect_uri: `${ORIGIN}/api/codeforcesCallback`
-                })
-            });
-            const tokenData = await tokenRes.json();
-            if (!tokenData?.id_token) {
-                return fail("Codeforces登录授权失败，请重试", 401);
-            }
-            // id_token 的 payload 中含 handle / avatar / rating（官方 OIDC 声明）
-            const payload = parseJwtPayload(tokenData.id_token);
-            const cfHandle = payload?.handle;
-            if (!cfHandle) {
-                return fail("无法获取Codeforces账号信息，请重试", 401);
-            }
-            let dbUser = null;
-            try {
-                dbUser = await DB.prepare(`SELECT * FROM users WHERE codeforces_id = ?`).bind(cfHandle).first();
-            } catch (dbErr) {
-                if (String(dbErr?.message || "").includes("no such column")) {
-                    return fail("数据库尚未迁移，请先调用 /api/init/ 完成升级", 500);
-                }
-                throw dbErr;
-            }
-            if (!dbUser) {
-                const randPwd = Math.random().toString(36).slice(2);
-                const hash = await secureHashPassword(randPwd, SECRET);
-                try {
-                    await DB.prepare(`INSERT INTO users (username,email,password,codeforces_id,role,totp_secret) VALUES (?,?,?,?,0,null)`)
-                        .bind(`cf_${cfHandle}`, `${cfHandle}@codeforces.local`, hash, cfHandle).run();
-                } catch (dbErr) {
-                    if (String(dbErr?.message || "").includes("no such column")) {
-                        return fail("数据库尚未迁移，请先调用 /api/init/ 完成升级", 500);
-                    }
-                    throw dbErr;
-                }
-                dbUser = await DB.prepare(`SELECT * FROM users WHERE codeforces_id = ?`).bind(cfHandle).first();
-            }
-            const sign = await hmacSha256(SECRET, String(dbUser.id));
-            const sid = `${dbUser.id}.${sign}`;
-            const redirect = Response.redirect(`${ORIGIN}/index.html`, 302);
-            redirect.headers.set("Set-Cookie", `sid=${sid}; Path=/; HttpOnly; SameSite=Lax`);
-            return redirect;
-        }
 
         // ===================== 主接口：/api/user =====================
         if (path !== "/api/user") return fail("接口不存在", 404);

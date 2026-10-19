@@ -2,19 +2,19 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  /* Âå¹ÈÄ¬ÈÏ×ÖÌå */
+  /* æ´›è°·é»˜è®¤å­—ä½“ */
   font-family: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
 
 body {
   min-height: 100vh;
-  /* Âå¹ÈÒ³Ãæµ×É«£ºÇ³»Ò°× */
+  /* æ´›è°·é¡µé¢åº•è‰²ï¼šæµ…ç°ç™½ */
   background-color: #f5f7fa;
   padding: 30px 15px;
 }
 
 .glass {
-  /* Ìæ»»²£Á§Ğ§¹ûÎªÂå¹È¿¨Æ¬ÑùÊ½ */
+  /* æ›¿æ¢ç»ç’ƒæ•ˆæœä¸ºæ´›è°·å¡ç‰‡æ ·å¼ */
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
